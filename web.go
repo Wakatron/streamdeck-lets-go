@@ -37,6 +37,7 @@ type WebServer struct {
 	cfg        *config.Config
 	configPath string
 	pm         *PageManager
+	decks      []*Deck
 	mu         sync.RWMutex
 }
 
@@ -54,6 +55,12 @@ func (s *WebServer) SetPageManager(pm *PageManager) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.pm = pm
+}
+
+func (s *WebServer) SetDecks(decks []*Deck) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.decks = decks
 }
 
 func (s *WebServer) Serve(ctx context.Context, addr string) error {
@@ -74,6 +81,8 @@ func (s *WebServer) Serve(ctx context.Context, addr string) error {
 	mux.HandleFunc("GET /api/backups/{filename}", s.handleGetBackup)
 
 	mux.HandleFunc("GET /api/models", s.handleGetModels)
+
+	mux.HandleFunc("GET /api/decks", s.handleGetDecks)
 
 	mux.HandleFunc("GET /api/status", s.handleGetStatus)
 
@@ -469,6 +478,19 @@ func (s *WebServer) handleGetModels(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(models)
+}
+
+func (s *WebServer) handleGetDecks(w http.ResponseWriter, r *http.Request) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	infos := make([]DeckInfo, 0, len(s.decks))
+	for _, d := range s.decks {
+		infos = append(infos, d.DeckInfo())
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(infos)
 }
 
 func (s *WebServer) handleGetStatus(w http.ResponseWriter, r *http.Request) {

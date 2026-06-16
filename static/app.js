@@ -10,6 +10,8 @@ document.addEventListener('alpine:init', () => {
     toast: null,
     displayOutputs: {},
     isCapturingKey: false,
+    decks: [],
+    activeDeckSerial: '',
 
     // ── Edit state ──
     editing: null,
@@ -25,7 +27,20 @@ document.addEventListener('alpine:init', () => {
     // ── Init ──
     async init() {
       await this.loadConfig()
+      await this.loadDecks()
       setInterval(() => this.pollDisplayOutputs(), 3000)
+    },
+
+    async loadDecks() {
+      try {
+        const res = await fetch('/api/decks')
+        if (res.ok) {
+          this.decks = await res.json()
+          if (this.decks.length > 0 && !this.activeDeckSerial) {
+            this.activeDeckSerial = this.decks[0].serial
+          }
+        }
+      } catch (_) {}
     },
 
     async pollDisplayOutputs() {
@@ -69,12 +84,18 @@ document.addEventListener('alpine:init', () => {
       return this.pages.map(p => p.name)
     },
 
+    get activeDeck() {
+      return this.decks.find(d => d.serial === this.activeDeckSerial)
+        || { keys_x: 5, keys_y: 3, num_keys: 15 }
+    },
+
     // ── Grid ──
     get gridKeys() {
       const page = this.currentPage
       if (!page) return []
       const keys = []
-      for (let i = 0; i < 15; i++) {
+      const n = this.activeDeck.num_keys
+      for (let i = 0; i < n; i++) {
         const kc = page.keys.find(k => k.index === i)
         keys.push({
           index: i,

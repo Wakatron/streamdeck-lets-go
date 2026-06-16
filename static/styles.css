@@ -107,12 +107,38 @@ main {
 
 .deck-grid {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
   gap: 8px;
   padding: 20px;
   background: var(--surface);
   border-radius: var(--radius);
   border: 1px solid var(--border);
+}
+
+.deck-selector {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 8px;
+  align-self: stretch;
+}
+.deck-btn {
+  flex: 1;
+  padding: 6px 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all var(--transition);
+  text-align: center;
+}
+.deck-btn:hover { color: var(--text); border-color: var(--border-light); }
+.deck-btn.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
 }
 
 .key-btn {

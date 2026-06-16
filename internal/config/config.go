@@ -160,13 +160,9 @@ func (c *Config) Validate() error {
 		pageNames[p.Name] = true
 
 		seenKeys := make(map[int]bool)
-		maxKey := 31
 		for _, k := range p.Keys {
 			if k.Index < 0 {
 				return fmt.Errorf("page %s: key index must be >= 0", p.Name)
-			}
-			if k.Index > maxKey {
-				return fmt.Errorf("page %s: key index %d exceeds max %d", p.Name, k.Index, maxKey)
 			}
 			if seenKeys[k.Index] {
 				return fmt.Errorf("page %s: duplicate key index %d", p.Name, k.Index)

@@ -37,11 +37,11 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 		return nil
 	}
 
-	var deck *Deck
+	var decks []*Deck
 	var err error
 
 	for {
-		deck, err = OpenDeck("")
+		decks, err = OpenAllDecks()
 		if err == nil {
 			break
 		}
@@ -52,18 +52,34 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 		case <-time.After(5 * time.Second):
 		}
 	}
-	defer deck.Close()
 
-	deck.SetBrightness(deviceBrightness(cfg))
-
-	pm := NewPageManager(deck)
-	pm.LoadPages(cfg.Pages)
-	web.SetPageManager(pm)
-
-	if err := pm.ActivatePage(cfg.DefaultPage); err != nil {
-		slog.Warn("activate default page", "error", err)
+	pageMgrs := make([]*PageManager, len(decks))
+	for i, d := range decks {
+		pageMgrs[i] = NewPageManager(d)
+		pageMgrs[i].LoadPages(cfg.Pages)
 	}
-	pm.startPeriodicKeys()
+	primaryPM := pageMgrs[0]
+	primaryDeck := decks[0]
+
+	defer func() {
+		for _, d := range decks {
+			d.Close()
+		}
+	}()
+
+	for _, d := range decks {
+		d.SetBrightness(deviceBrightness(cfg, d.Serial()))
+	}
+
+	web.SetDecks(decks)
+	web.SetPageManager(primaryPM)
+
+	for _, pm := range pageMgrs {
+		if err := pm.ActivatePage(cfg.DefaultPage); err != nil {
+			slog.Warn("activate default page", "error", err)
+		}
+		pm.startPeriodicKeys()
+	}
 
 	var windowCh <-chan Window
 	var detector WindowDetector
@@ -93,20 +109,23 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 	defer configTicker.Stop()
 	var lastConfigMod time.Time
 
-	slog.Info("daemon started")
+	slog.Info("daemon started", "decks", len(decks))
 	defer slog.Info("daemon stopped")
 
 	for {
 		select {
-		case evt, ok := <-deck.Events():
+		case evt, ok := <-primaryDeck.Events():
 			if !ok {
 				slog.Warn("deck event channel closed, attempting reconnect...")
-				deck.Close()
-				deck = reconnectDeck(ctx, cfg, &pm, asm)
-				if deck == nil {
+				primaryDeck.Close()
+				newDeck := reconnectDeck(ctx, cfg, &primaryPM, asm)
+				if newDeck == nil {
 					return ctx.Err()
 				}
-				deck.SetBrightness(deviceBrightness(cfg))
+				decks[0] = newDeck
+				primaryDeck = newDeck
+				web.SetDecks(decks)
+				newDeck.SetBrightness(deviceBrightness(cfg, newDeck.Serial()))
 				continue
 			}
 
@@ -115,22 +134,24 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 
 			if evt.Kind == EventKeyPressed {
 				if wasSsActive {
-					ssCtrl.Deactivate(deck)
+					ssCtrl.Deactivate(primaryDeck)
 
-					savedOutputs := pm.GetDisplayOutputs()
+					savedOutputs := primaryPM.GetDisplayOutputs()
 
-					if page := pm.ActivePage(); page != nil {
-						if err := pm.ActivatePage(pm.ActivePageName()); err != nil {
-							slog.Warn("screensaver: re-render page", "error", err)
+					if page := primaryPM.ActivePage(); page != nil {
+						for _, pm := range pageMgrs {
+							if err := pm.ActivatePage(primaryPM.ActivePageName()); err != nil {
+								slog.Warn("screensaver: re-render page", "error", err)
+							}
 						}
 					}
 
 					for idx, output := range savedOutputs {
-						pm.ReRenderDisplayKey(idx, output)
+						primaryPM.ReRenderDisplayKey(idx, output)
 					}
 				}
 
-				page := pm.ActivePage()
+				page := primaryPM.ActivePage()
 				if page == nil {
 					continue
 				}
@@ -143,8 +164,13 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 						}
 
 						go func(a *config.Action) {
-							if err := ExecuteAction(a, deck, pm); err != nil {
+							if err := ExecuteAction(a, primaryDeck, primaryPM); err != nil {
 								slog.Error("execute action", "error", err)
+							}
+							if a.Type == "page" {
+								for _, pm := range pageMgrs[1:] {
+									pm.ActivatePage(a.Page)
+								}
 							}
 						}(k.Action)
 						break
@@ -153,15 +179,17 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 			}
 
 		case win := <-windowCh:
-			if page, ok := asm.Evaluate(win, pm.ActivePageName()); ok {
-				if err := pm.ActivatePage(page); err != nil {
-					slog.Warn("auto-switch: activate page", "error", err)
+			if page, ok := asm.Evaluate(win, primaryPM.ActivePageName()); ok {
+				for _, pm := range pageMgrs {
+					if err := pm.ActivatePage(page); err != nil {
+						slog.Warn("auto-switch: activate page", "error", err)
+					}
+					pm.startPeriodicKeys()
 				}
-				pm.startPeriodicKeys()
 			}
 
 		case <-configTicker.C:
-			path := 	config.ConfigPath(opts.ConfigPath)
+			path := config.ConfigPath(opts.ConfigPath)
 			fi, err := os.Stat(path)
 			if err != nil {
 				continue
@@ -178,37 +206,48 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 				cfg = newCfg
 				web.UpdateConfig(cfg)
 				ssCtrl = NewScreensaver(&cfg.Screensaver)
-				deck.SetBrightness(deviceBrightness(cfg))
-				pm.stopPeriodicKeys()
-				pm.LoadPages(cfg.Pages)
+				for _, d := range decks {
+					d.SetBrightness(deviceBrightness(cfg, d.Serial()))
+				}
+				for _, pm := range pageMgrs {
+					pm.stopPeriodicKeys()
+					pm.LoadPages(cfg.Pages)
+				}
 				asm.Reload(cfg.AutoSwitch)
 				if len(cfg.AutoSwitch) > 0 && detector == nil {
 					detector = NewWindowDetector()
 					windowCh, _ = detector.Start(ctx)
 				}
-				if err := pm.ActivatePage(cfg.DefaultPage); err != nil {
-					slog.Warn("reload: activate default page", "error", err)
+				for _, pm := range pageMgrs {
+					if err := pm.ActivatePage(cfg.DefaultPage); err != nil {
+						slog.Warn("reload: activate default page", "error", err)
+					}
+					pm.startPeriodicKeys()
 				}
-				pm.startPeriodicKeys()
 			}
 			if lastConfigMod.IsZero() {
 				lastConfigMod = mt
 			}
 
 		case <-reconnectTicker.C:
-			if err := deck.SetBrightness(deck.Brightness()); err != nil {
+			if err := primaryDeck.SetBrightness(primaryDeck.Brightness()); err != nil {
 				slog.Warn("deck connection lost, reconnecting...", "error", err)
-				deck.Close()
-				deck = reconnectDeck(ctx, cfg, &pm, asm)
-				if deck == nil {
+				primaryDeck.Close()
+				newDeck := reconnectDeck(ctx, cfg, &primaryPM, asm)
+				if newDeck == nil {
 					return ctx.Err()
 				}
-				deck.SetBrightness(deviceBrightness(cfg))
+				decks[0] = newDeck
+				primaryDeck = newDeck
+				web.SetDecks(decks)
+				newDeck.SetBrightness(deviceBrightness(cfg, newDeck.Serial()))
 			}
 
 		case <-ssTicker.C:
 			if ssCtrl.Check() {
-				ssCtrl.Activate(deck, &cfg.Screensaver)
+				for _, d := range decks {
+					ssCtrl.Activate(d, &cfg.Screensaver)
+				}
 			}
 
 		case <-ctx.Done():
@@ -229,9 +268,14 @@ func checkKeyboardTool() {
 	}
 }
 
-func deviceBrightness(cfg *config.Config) int {
-	if len(cfg.Devices) > 0 && cfg.Devices[0].Brightness > 0 {
-		return cfg.Devices[0].Brightness
+func deviceBrightness(cfg *config.Config, serial string) int {
+	for _, d := range cfg.Devices {
+		if d.Serial == serial || d.Serial == "" {
+			if d.Brightness > 0 {
+				return d.Brightness
+			}
+			return 75
+		}
 	}
 	return 75
 }

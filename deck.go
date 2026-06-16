@@ -163,6 +163,51 @@ func (d *Deck) Events() <-chan Event { return d.events }
 func (d *Deck) NumKeys() int { return d.cfg.KeysX * d.cfg.KeysY }
 func (d *Deck) KeySize() int { return d.cfg.KeySize }
 func (d *Deck) Config() DeckConfig { return d.cfg }
+func (d *Deck) Model() string { return d.cfg.Name }
+
+type DeckInfo struct {
+	Serial  string `json:"serial"`
+	Model   string `json:"model"`
+	KeysX   int    `json:"keys_x"`
+	KeysY   int    `json:"keys_y"`
+	NumKeys int    `json:"num_keys"`
+	KeySize int    `json:"key_size"`
+}
+
+func (d *Deck) DeckInfo() DeckInfo {
+	return DeckInfo{
+		Serial:  d.serial,
+		Model:   d.cfg.Name,
+		KeysX:   d.cfg.KeysX,
+		KeysY:   d.cfg.KeysY,
+		NumKeys: d.cfg.KeysX * d.cfg.KeysY,
+		KeySize: d.cfg.KeySize,
+	}
+}
+
+func OpenAllDecks() ([]*Deck, error) {
+	devices := hid.Enumerate(streamdeck.VendorID, 0)
+	if len(devices) == 0 {
+		return nil, fmt.Errorf("no stream deck devices found")
+	}
+	var decks []*Deck
+	for _, d := range devices {
+		if _, ok := findConfig(d.ProductID); !ok {
+			slog.Warn("skipping unsupported device", "pid", fmt.Sprintf("0x%04x", d.ProductID))
+			continue
+		}
+		deck, err := OpenDeck(d.Serial)
+		if err != nil {
+			slog.Warn("failed to open deck", "serial", d.Serial, "error", err)
+			continue
+		}
+		decks = append(decks, deck)
+	}
+	if len(decks) == 0 {
+		return nil, fmt.Errorf("no supported stream deck devices could be opened")
+	}
+	return decks, nil
+}
 
 func (d *Deck) SetBrightness(val int) error {
 	if val < 0 {

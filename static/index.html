@@ -45,7 +45,15 @@
 
   <!-- ═══ Grid View ═══ -->
   <main x-show="view === 'grid' && !subView">
-    <div class="deck-grid">
+    <div class="deck-selector" x-show="decks.length > 1">
+      <template x-for="d in decks" :key="d.serial">
+        <button class="deck-btn"
+          :class="{ active: d.serial === activeDeckSerial }"
+          @click="activeDeckSerial = d.serial"
+          x-text="d.model + ' (' + d.keys_x + '\u00d7' + d.keys_y + ')'"></button>
+      </template>
+    </div>
+    <div class="deck-grid" :style="'grid-template-columns: repeat(' + activeDeck.keys_x + ', 1fr)'">
       <template x-for="key in gridKeys" :key="key.index">
         <button class="key-btn"
           :class="{ empty: !key.configured }"

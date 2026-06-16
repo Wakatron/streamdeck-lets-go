@@ -7,6 +7,7 @@ import (
 	"image/draw"
 	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/bearsh/hid"
 	"github.com/dh1tw/streamdeck"
@@ -83,6 +84,7 @@ func toStreamDeckConfig(dc DeckConfig) *streamdeck.Config {
 type Event struct {
 	Kind  int
 	Index int
+	At    time.Time
 }
 
 const (
@@ -137,7 +139,7 @@ func OpenDeck(serial string) (*Deck, error) {
 			return
 		}
 		select {
-		case d.events <- Event{Kind: kind, Index: e.Which}:
+		case d.events <- Event{Kind: kind, Index: e.Which, At: time.Now()}:
 		default:
 			slog.Warn("event channel full, dropping event", "kind", e.Kind, "index", e.Which)
 		}

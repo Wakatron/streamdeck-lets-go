@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"image"
 	"image/color"
@@ -33,14 +34,21 @@ type keyState struct {
 	cancel context.CancelFunc
 }
 
+type DisplayOutput struct {
+	Text       string `json:"text"`
+	Background string `json:"background,omitempty"`
+	TextColor  string `json:"text_color,omitempty"`
+}
+
 type PageManager struct {
 	mu             sync.RWMutex
 	pages          map[string]*config.PageConfig
 	active         string
 	deck           *Deck
 	keyStates      map[int]*keyState
-	displayOutputs map[int]string
+	displayOutputs map[int]*DisplayOutput
 	displayMu      sync.RWMutex
+	defaultFont    string
 }
 
 func NewPageManager(deck *Deck) *PageManager {
@@ -48,7 +56,8 @@ func NewPageManager(deck *Deck) *PageManager {
 		pages:          make(map[string]*config.PageConfig),
 		deck:           deck,
 		keyStates:      make(map[int]*keyState),
-		displayOutputs: make(map[int]string),
+		displayOutputs: make(map[int]*DisplayOutput),
+		defaultFont:    "medium",
 	}
 }
 
@@ -74,7 +83,7 @@ func (pm *PageManager) ActivatePage(name string) error {
 	pm.active = name
 
 	pm.displayMu.Lock()
-	pm.displayOutputs = make(map[int]string)
+	pm.displayOutputs = make(map[int]*DisplayOutput)
 	pm.displayMu.Unlock()
 
 	if err := pm.deck.ClearAll(); err != nil {
@@ -122,10 +131,10 @@ func (pm *PageManager) ActivePage() *config.PageConfig {
 	return pm.pages[pm.active]
 }
 
-func (pm *PageManager) GetDisplayOutputs() map[int]string {
+func (pm *PageManager) GetDisplayOutputs() map[int]*DisplayOutput {
 	pm.displayMu.RLock()
 	defer pm.displayMu.RUnlock()
-	result := make(map[int]string, len(pm.displayOutputs))
+	result := make(map[int]*DisplayOutput, len(pm.displayOutputs))
 	for k, v := range pm.displayOutputs {
 		result[k] = v
 	}
@@ -171,7 +180,7 @@ func (pm *PageManager) ReRenderDisplayKey(keyIndex int, output string) {
 func (pm *PageManager) renderKey(idx int, k *config.KeyConfig) {
 	fontName := k.Font
 	if fontName == "" {
-		fontName = "medium"
+		fontName = pm.defaultFont
 	}
 	fontSize := 18.0
 	if k.FontSize != nil {
@@ -208,7 +217,7 @@ func (pm *PageManager) renderKey(idx int, k *config.KeyConfig) {
 		}
 		onImgFontName := fontName
 		if k.Font == "" {
-			onImgFontName = "regular"
+			onImgFontName = pm.defaultFont
 		}
 
 		if k.Label != "" {
@@ -312,6 +321,69 @@ func (pm *PageManager) runDisplayKey(idx int, d *config.DisplayCfg, ctx context.
 	}
 }
 
+type displayFormat struct {
+	Text       string `json:"text"`
+	Background string `json:"background,omitempty"`
+	TextColor  string `json:"text_color,omitempty"`
+}
+
+func looksLikeHex(s string) bool {
+	if len(s) != 7 && len(s) != 9 {
+		return false
+	}
+	if s[0] != '#' {
+		return false
+	}
+	for _, c := range s[1:] {
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+			return false
+		}
+	}
+	return true
+}
+
+func parseDisplayOutput(output string) (*DisplayOutput, color.Color, color.Color) {
+	trimmed := strings.TrimSpace(output)
+	if trimmed == "" {
+		return &DisplayOutput{}, nil, nil
+	}
+
+	var do DisplayOutput
+	var bgColor, fgColor color.Color
+	if err := json.Unmarshal([]byte(trimmed), &do); err == nil && (do.Text != "" || do.Background != "") {
+		if do.Background != "" {
+			if c, err := parseHexColor(do.Background); err == nil {
+				bgColor = c
+			}
+		}
+		if do.TextColor != "" {
+			if c, err := parseHexColor(do.TextColor); err == nil {
+				fgColor = c
+			}
+		}
+		do.Text = sanitizeText(do.Text)
+		return &do, bgColor, fgColor
+	}
+
+	lines := strings.SplitN(trimmed, "\n", 2)
+	if len(lines) > 0 {
+		first := strings.TrimSpace(lines[0])
+		if looksLikeHex(first) {
+			do.Background = first
+			if c, err := parseHexColor(first); err == nil {
+				bgColor = c
+			}
+			if len(lines) > 1 {
+				do.Text = sanitizeText(lines[1])
+			}
+			return &do, bgColor, fgColor
+		}
+	}
+
+	do.Text = sanitizeText(trimmed)
+	return &do, bgColor, fgColor
+}
+
 func (pm *PageManager) renderKeyOutput(idx int, d *config.DisplayCfg, output string, execErr error) {
 	pm.mu.RLock()
 	page := pm.pages[pm.active]
@@ -336,22 +408,29 @@ func (pm *PageManager) renderKeyOutput(idx int, d *config.DisplayCfg, output str
 		slog.Warn("display command failed", "key", idx, "error", execErr)
 	}
 
-	text := sanitizeText(output)
-	if text == "" {
+	do, bgOverride, fgOverride := parseDisplayOutput(output)
+	fg := fgOverride
+	if fg == nil {
+		fg = color.White
+	}
+
+	if do.Text == "" && bgOverride == nil {
 		return
 	}
 
 	pm.displayMu.Lock()
-	pm.displayOutputs[idx] = text
+	pm.displayOutputs[idx] = do
 	pm.displayMu.Unlock()
 
 	maxLen := d.MaxLen
 	if maxLen <= 0 {
 		maxLen = 128
 	}
-	if len(text) > maxLen {
-		text = text[:maxLen]
+	if len(do.Text) > maxLen {
+		do.Text = do.Text[:maxLen]
 	}
+
+	text := do.Text
 
 	faScale := 0.55
 	if kc.IconScale != nil {
@@ -367,40 +446,45 @@ func (pm *PageManager) renderKeyOutput(idx int, d *config.DisplayCfg, output str
 		img, err := loadImage(kc.Icon, pm.deck.KeySize(), faScale)
 		if err != nil {
 			slog.Warn("load icon for display", "path", kc.Icon, "error", err)
-			textImg := renderUnicodeText(text, fontSize, pm.deck.KeySize(), color.Black)
+			var bg color.Color = color.Black
+			if bgOverride != nil {
+				bg = bgOverride
+			}
+			textImg := renderUnicodeText(text, fontSize, pm.deck.KeySize(), bg, fg)
 			if err := pm.deck.FillImage(idx, textImg); err != nil {
 				slog.Warn("fill image", "error", err)
 			}
 			return
 		}
 
-		if kc.Background != "" {
+		if kc.Background != "" && bgOverride == nil {
 			if bg, err := parseHexColor(kc.Background); err == nil {
 				img = applyBackground(img, bg)
 			} else {
 				slog.Warn("invalid background color", "value", kc.Background, "error", err)
 			}
+		} else if bgOverride != nil {
+			if rgba, ok := bgOverride.(color.RGBA); ok {
+				img = applyBackground(img, rgba)
+			}
 		}
 
-		composite := renderUnicodeTextOnImage(img, text, fontSize, pm.deck.KeySize())
+		composite := renderUnicodeTextOnImage(img, text, fontSize, pm.deck.KeySize(), fg)
 		if err := pm.deck.FillImage(idx, composite); err != nil {
 			slog.Warn("fill image", "error", err)
 		}
 		return
 	}
 
-	if kc.Background != "" {
-		bg, err := parseHexColor(kc.Background)
-		if err == nil {
-			textImg := renderUnicodeText(text, fontSize, pm.deck.KeySize(), bg)
-			if err := pm.deck.FillImage(idx, textImg); err != nil {
-				slog.Warn("fill image", "error", err)
-			}
-			return
+	var bg color.Color = color.Black
+	if bgOverride != nil {
+		bg = bgOverride
+	} else if kc.Background != "" {
+		if c, err := parseHexColor(kc.Background); err == nil {
+			bg = c
 		}
-		slog.Warn("invalid background color", "value", kc.Background, "error", err)
 	}
-	textImg := renderUnicodeText(text, fontSize, pm.deck.KeySize(), color.Black)
+	textImg := renderUnicodeText(text, fontSize, pm.deck.KeySize(), bg, fg)
 	if err := pm.deck.FillImage(idx, textImg); err != nil {
 		slog.Warn("fill image", "error", err)
 	}
@@ -457,7 +541,7 @@ func renderEmojiGlyph(r rune, size int, scale float64) image.Image {
 	data := loadEmojiFontBytes()
 	fnt, err := opentype.Parse(data)
 	if err != nil {
-		return renderUnicodeText(string(r), fontSize, size, color.Black)
+		return renderUnicodeText(string(r), fontSize, size, color.Black, color.White)
 	}
 	face, err := opentype.NewFace(fnt, &opentype.FaceOptions{
 		Size:    fontSize,
@@ -465,7 +549,7 @@ func renderEmojiGlyph(r rune, size int, scale float64) image.Image {
 		Hinting: font.HintingFull,
 	})
 	if err != nil {
-		return renderUnicodeText(string(r), fontSize, size, color.Black)
+		return renderUnicodeText(string(r), fontSize, size, color.Black, color.White)
 	}
 	defer face.Close()
 
@@ -523,11 +607,11 @@ func parseDisplayFace(size float64) (font.Face, error) {
 	})
 }
 
-func renderUnicodeText(text string, fontSize float64, keySize int, bg color.Color) *image.RGBA {
+func renderUnicodeText(text string, fontSize float64, keySize int, bg, fg color.Color) *image.RGBA {
 	rgba := image.NewRGBA(image.Rect(0, 0, keySize, keySize))
 	draw.Draw(rgba, rgba.Bounds(), &image.Uniform{bg}, image.Point{}, draw.Src)
 
-	if text == "" {
+	if text == "" || fg == nil {
 		return rgba
 	}
 
@@ -552,7 +636,7 @@ func renderUnicodeText(text string, fontSize float64, keySize int, bg color.Colo
 
 	d := &font.Drawer{
 		Dst:  rgba,
-		Src:  &image.Uniform{color.White},
+		Src:  &image.Uniform{fg},
 		Face: face,
 		Dot:  fixed.P(x, y),
 	}
@@ -561,7 +645,7 @@ func renderUnicodeText(text string, fontSize float64, keySize int, bg color.Colo
 	return rgba
 }
 
-func renderUnicodeTextOnImage(baseImg image.Image, text string, fontSize float64, keySize int) *image.RGBA {
+func renderUnicodeTextOnImage(baseImg image.Image, text string, fontSize float64, keySize int, fg color.Color) *image.RGBA {
 	g := gift.New(gift.Resize(keySize, keySize, gift.LanczosResampling))
 	rgba := image.NewRGBA(image.Rect(0, 0, keySize, keySize))
 	g.Draw(rgba, baseImg)
@@ -573,7 +657,7 @@ func renderUnicodeTextOnImage(baseImg image.Image, text string, fontSize float64
 	barRect := image.Rect(0, keySize-barHeight, keySize, keySize)
 	draw.Draw(rgba, barRect, &image.Uniform{color.RGBA{0, 0, 0, 180}}, image.Point{}, draw.Over)
 
-	if text == "" {
+	if text == "" || fg == nil {
 		return rgba
 	}
 
@@ -598,7 +682,7 @@ func renderUnicodeTextOnImage(baseImg image.Image, text string, fontSize float64
 
 	d := &font.Drawer{
 		Dst:  rgba,
-		Src:  &image.Uniform{color.White},
+		Src:  &image.Uniform{fg},
 		Face: face,
 		Dot:  fixed.P(x, y),
 	}

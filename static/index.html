@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>StreamDeck</title>
 <script src="/static/app.js"></script>
-<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
+<script defer src="/static/alpine.min.js"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
 <link rel="stylesheet" href="/static/styles.css">
 </head>
@@ -56,6 +56,7 @@
     <div class="deck-grid" :style="'grid-template-columns: repeat(' + activeDeck.keys_x + ', 1fr)'">
       <template x-for="key in gridKeys" :key="key.index">
         <button class="key-btn"
+          :style="key.displayBg ? { backgroundColor: key.displayBg } : {}"
           :class="{ empty: !key.configured }"
           @click="editKey(key.index)">
           <img x-show="key.configured && key.background"
@@ -68,7 +69,15 @@
             style="font-size:12px;color:#fff;opacity:0.75;text-align:center;line-height:1.2;padding:4px;"
             x-text="key.label"></span>
           <span x-show="!key.configured" style="color:var(--text-muted);font-size:24px;opacity:0.5;">+</span>
-          <i x-show="key.action?.type === 'keyboard'" class="fas fa-keyboard display-indicator" title="Keyboard shortcut" style="left:4px;right:auto;"></i>
+          <div class="action-icons" x-show="key.hasAction">
+            <template x-for="(t, ti) in key.actionTypes.slice(0,3)" :key="ti">
+              <i :class="'fas fa-' + actionIconMap[t] + ' action-icon type-' + t"
+                 :title="actionTitleMap[t]"></i>
+            </template>
+            <span class="action-icon" x-show="key.actionTypes.length > 3"
+              style="background:var(--text-muted);font-size:7px;font-weight:700;padding:2px 3px;"
+              x-text="'+' + (key.actionTypes.length - 3)"></span>
+          </div>
           <i x-show="key.hasDisplay" class="fas fa-arrows-rotate display-indicator" title="Periodic display"></i>
         </button>
       </template>
@@ -113,6 +122,13 @@
             <span class="value" x-text="settingsForm.brightness + '%'"></span>
           </div>
         </div>
+        <div class="form-group">
+          <label>Default Font</label>
+          <select x-model="settingsForm.font">
+            <option value="medium">Medium</option>
+            <option value="regular">Regular</option>
+          </select>
+        </div>
       </div>
 
       <!-- Screensaver -->
@@ -130,6 +146,25 @@
           <div class="form-group">
             <label>Brightness on idle</label>
             <input type="number" min="0" max="100" x-model.number="settingsForm.screensaver_brightness">
+          </div>
+        </div>
+      </div>
+
+      <!-- Gesture Timing -->
+      <div class="panel-section">
+        <h4>Gesture Timing</h4>
+        <div class="form-group">
+          <label>Long press threshold</label>
+          <div class="slider-group">
+            <input type="range" min="200" max="1500" step="50" x-model.number="settingsForm.long_press_ms">
+            <span class="value" x-text="settingsForm.long_press_ms + 'ms'"></span>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Double tap threshold</label>
+          <div class="slider-group">
+            <input type="range" min="100" max="600" step="25" x-model.number="settingsForm.double_tap_ms">
+            <span class="value" x-text="settingsForm.double_tap_ms + 'ms'"></span>
           </div>
         </div>
       </div>
@@ -250,8 +285,214 @@
         <input type="text" x-model="editForm.label" placeholder="Optional text">
       </div>
 
+      <!-- Actions section -->
+      <h4 style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;margin-top:12px;">Actions</h4>
+
+      <!-- Action tabs -->
+        <div class="action-tabs">
+          <template x-for="t in ['tap','long_press','double_tap','hold']" :key="t">
+            <button class="action-tab"
+              :class="{ active: editForm.activeTrigger === t, configured: (t === 'hold' ? (hasHoldAction('start') || hasHoldAction('end')) : hasCurrentAction(t)) }"
+              @click="editForm.activeTrigger = t">
+              <span x-text="triggerLabel(t)"></span>
+              <span class="tab-check" x-show="(t === 'hold' ? (hasHoldAction('start') || hasHoldAction('end')) : hasCurrentAction(t))">✓</span>
+            </button>
+          </template>
+        </div>
+
+        <!-- Non-hold trigger panes -->
+        <template x-for="t in ['tap','long_press','double_tap']" :key="t">
+          <div x-show="editForm.activeTrigger === t">
+            <div class="form-group">
+              <select x-model="editForm.actions[t].type">
+                <option value="none">None</option>
+                <option value="command">Command</option>
+                <option value="builtin">Builtin</option>
+                <option value="script">Script</option>
+                <option value="page">Switch page</option>
+                <option value="keyboard">Keyboard shortcut</option>
+              </select>
+            </div>
+
+            <template x-if="editForm.actions[t].type === 'command'">
+              <div>
+                <div class="form-group">
+                  <input type="text" x-model="editForm.actions[t].command" placeholder="firefox">
+                </div>
+                <div class="checkbox-row">
+                  <input type="checkbox" :id="'bg-cb-' + t" x-model="editForm.actions[t].background">
+                  <label :for="'bg-cb-' + t">Run in background</label>
+                </div>
+              </div>
+            </template>
+
+            <template x-if="editForm.actions[t].type === 'builtin'">
+              <div class="form-group">
+                <select x-model="editForm.actions[t].builtin">
+                  <option value="">-- select --</option>
+                  <option value="volume_up">Volume Up</option>
+                  <option value="volume_down">Volume Down</option>
+                  <option value="volume_mute">Volume Mute</option>
+                  <option value="brightness_up">Brightness Up</option>
+                  <option value="brightness_down">Brightness Down</option>
+                  <option value="media_play_pause">Play/Pause</option>
+                  <option value="media_next">Next Track</option>
+                  <option value="media_prev">Previous Track</option>
+                  <option value="media_stop">Stop</option>
+                </select>
+              </div>
+            </template>
+
+            <template x-if="editForm.actions[t].type === 'script'">
+              <div class="form-group">
+                <input type="text" x-model="editForm.actions[t].script" placeholder="/path/to/script.sh">
+              </div>
+            </template>
+
+            <template x-if="editForm.actions[t].type === 'page'">
+              <div class="form-group">
+                <select x-model="editForm.actions[t].page">
+                  <option value="">-- select --</option>
+                  <template x-for="p in pages" :key="p.name">
+                    <option :value="p.name" x-text="p.name"></option>
+                  </template>
+                </select>
+              </div>
+            </template>
+
+            <template x-if="editForm.actions[t].type === 'keyboard'">
+              <div class="form-group">
+                <label>Key combination</label>
+                <div class="mod-row">
+                  <button class="mod-btn" :class="{ active: editForm.actions[t].modCtrl }" @click="toggleMod('ctrl')" type="button">Ctrl</button>
+                  <button class="mod-btn" :class="{ active: editForm.actions[t].modAlt }" @click="toggleMod('alt')" type="button">Alt</button>
+                  <button class="mod-btn" :class="{ active: editForm.actions[t].modShift }" @click="toggleMod('shift')" type="button">Shift</button>
+                  <button class="mod-btn" :class="{ active: editForm.actions[t].modSuper }" @click="toggleMod('super')" type="button">Super</button>
+                </div>
+                <div class="key-capture"
+                     x-ref="keyCapture"
+                     :class="{ capturing: isCapturingKey }"
+                     tabindex="0"
+                     @keydown.prevent="onCaptureKey"
+                     @blur="isCapturingKey = false"
+                     @click="startKeyCapture">
+                  <span x-show="!isCapturingKey && editForm.actions[t].mainKey" class="captured-key" x-text="displayKey(editForm.actions[t].mainKey)"></span>
+                  <span x-show="isCapturingKey" class="capture-hint">Press any key...</span>
+                  <span x-show="!isCapturingKey && !editForm.actions[t].mainKey" class="capture-placeholder">Click to capture</span>
+                </div>
+                <div class="key-chips" x-show="editForm.actions[t].keys" style="margin-top:8px;">
+                  <template x-for="(chip, ki) in keyChips" :key="ki">
+                    <span class="key-chip" x-text="chip"></span>
+                    <span x-show="ki < keyChips.length - 1" class="key-plus">+</span>
+                  </template>
+                </div>
+              </div>
+            </template>
+          </div>
+        </template>
+
+        <!-- Hold pane -->
+        <div x-show="editForm.activeTrigger === 'hold'">
+          <div class="hold-subtabs">
+            <button class="hold-stab" :class="{ active: editForm.holdPhase === 'start' }"
+              @click="editForm.holdPhase = 'start'">On press &amp; hold</button>
+            <button class="hold-stab" :class="{ active: editForm.holdPhase === 'end' }"
+              @click="editForm.holdPhase = 'end'">On release</button>
+          </div>
+
+          <template x-for="phase in ['start','end']" :key="phase">
+            <div x-show="editForm.holdPhase === phase">
+              <div class="form-group">
+                <select x-model="editForm.actions.hold[phase].type">
+                  <option value="none">None</option>
+                  <option value="command">Command</option>
+                  <option value="builtin">Builtin</option>
+                  <option value="script">Script</option>
+                  <option value="page">Switch page</option>
+                  <option value="keyboard">Keyboard shortcut</option>
+                </select>
+              </div>
+
+              <template x-if="editForm.actions.hold[phase].type === 'command'">
+                <div>
+                  <div class="form-group">
+                    <input type="text" x-model="editForm.actions.hold[phase].command" placeholder="firefox">
+                  </div>
+                  <div class="checkbox-row">
+                    <input type="checkbox" :id="'hold-bg-' + phase" x-model="editForm.actions.hold[phase].background">
+                    <label :for="'hold-bg-' + phase">Run in background</label>
+                  </div>
+                </div>
+              </template>
+
+              <template x-if="editForm.actions.hold[phase].type === 'builtin'">
+                <div class="form-group">
+                  <select x-model="editForm.actions.hold[phase].builtin">
+                    <option value="">-- select --</option>
+                    <option value="volume_up">Volume Up</option>
+                    <option value="volume_down">Volume Down</option>
+                    <option value="volume_mute">Volume Mute</option>
+                    <option value="brightness_up">Brightness Up</option>
+                    <option value="brightness_down">Brightness Down</option>
+                    <option value="media_play_pause">Play/Pause</option>
+                    <option value="media_next">Next Track</option>
+                    <option value="media_prev">Previous Track</option>
+                    <option value="media_stop">Stop</option>
+                  </select>
+                </div>
+              </template>
+
+              <template x-if="editForm.actions.hold[phase].type === 'script'">
+                <div class="form-group">
+                  <input type="text" x-model="editForm.actions.hold[phase].script" placeholder="/path/to/script.sh">
+                </div>
+              </template>
+
+              <template x-if="editForm.actions.hold[phase].type === 'page'">
+                <div class="form-group">
+                  <select x-model="editForm.actions.hold[phase].page">
+                    <option value="">-- select --</option>
+                    <template x-for="p in pages" :key="p.name">
+                      <option :value="p.name" x-text="p.name"></option>
+                    </template>
+                  </select>
+                </div>
+              </template>
+
+              <template x-if="editForm.actions.hold[phase].type === 'keyboard'">
+                <div class="form-group">
+                  <label>Key combination</label>
+                  <div class="mod-row">
+                    <button class="mod-btn" :class="{ active: editForm.actions.hold[phase].modCtrl }" @click="toggleMod('ctrl')" type="button">Ctrl</button>
+                    <button class="mod-btn" :class="{ active: editForm.actions.hold[phase].modAlt }" @click="toggleMod('alt')" type="button">Alt</button>
+                    <button class="mod-btn" :class="{ active: editForm.actions.hold[phase].modShift }" @click="toggleMod('shift')" type="button">Shift</button>
+                    <button class="mod-btn" :class="{ active: editForm.actions.hold[phase].modSuper }" @click="toggleMod('super')" type="button">Super</button>
+                  </div>
+                  <div class="key-capture"
+                       x-ref="keyCapture"
+                       :class="{ capturing: isCapturingKey }"
+                       tabindex="0"
+                       @keydown.prevent="onCaptureKey"
+                       @blur="isCapturingKey = false"
+                       @click="startKeyCapture">
+                    <span x-show="!isCapturingKey && editForm.actions.hold[phase].mainKey" class="captured-key" x-text="displayKey(editForm.actions.hold[phase].mainKey)"></span>
+                    <span x-show="isCapturingKey" class="capture-hint">Press any key...</span>
+                    <span x-show="!isCapturingKey && !editForm.actions.hold[phase].mainKey" class="capture-placeholder">Click to capture</span>
+                  </div>
+                  <div class="key-chips" x-show="editForm.actions.hold[phase].keys" style="margin-top:8px;">
+                    <template x-for="(chip, ki) in keyChips" :key="ki">
+                      <span class="key-chip" x-text="chip"></span>
+                      <span x-show="ki < keyChips.length - 1" class="key-plus">+</span>
+                    </template>
+                  </div>
+                </div>
+              </template>
+        </div>
+      </template>
+      </div>
+
       <!-- Advanced toggle -->
-      <button class="collapse-toggle" :class="{ open: showAdvanced }" @click="showAdvanced = !showAdvanced">
+      <button class="collapse-toggle" :class="{ open: showAdvanced }" @click="showAdvanced = !showAdvanced" style="margin-top:8px;">
         <i class="fas fa-chevron-right"></i> More
       </button>
 
@@ -277,112 +518,15 @@
                    placeholder="#rrggbb or #rrggbbaa" maxlength="9"
                    style="flex:1;">
             <button class="icon-btn" style="width:24px;height:24px;font-size:10px;flex-shrink:0;"
-                    @click="editForm.background = ''" title="Clear"
-                    x-show="editForm.background !== ''">
+                    @click="editForm.bg_color = ''" title="Clear"
+                    x-show="editForm.bg_color !== ''">
               <i class="fas fa-xmark"></i>
             </button>
           </div>
         </div>
 
-        <div class="form-group">
-          <label>Action type</label>
-          <select x-model="editForm.action_type">
-            <option value="none">None</option>
-            <option value="command">Command</option>
-            <option value="builtin">Builtin</option>
-            <option value="script">Script</option>
-            <option value="page">Page</option>
-            <option value="keyboard">Keyboard shortcut</option>
-          </select>
-        </div>
+        <div style="border-top:1px solid var(--border);margin:8px 0;"></div>
 
-        <!-- Command fields -->
-        <template x-if="editForm.action_type === 'command'">
-          <div>
-            <div class="form-group">
-              <label>Command</label>
-              <input type="text" x-model="editForm.command" placeholder="firefox">
-            </div>
-            <div class="checkbox-row">
-              <input type="checkbox" id="bg-cb" x-model="editForm.bg_color">
-              <label for="bg-cb">Run in background</label>
-            </div>
-          </div>
-        </template>
-
-        <template x-if="editForm.action_type === 'builtin'">
-          <div class="form-group">
-            <label>Builtin action</label>
-            <select x-model="editForm.builtin">
-              <option value="">-- select --</option>
-              <option value="volume_up">Volume Up</option>
-              <option value="volume_down">Volume Down</option>
-              <option value="volume_mute">Volume Mute</option>
-              <option value="brightness_up">Brightness Up</option>
-              <option value="brightness_down">Brightness Down</option>
-              <option value="media_play_pause">Play/Pause</option>
-              <option value="media_next">Next Track</option>
-              <option value="media_prev">Previous Track</option>
-              <option value="media_stop">Stop</option>
-            </select>
-          </div>
-        </template>
-
-        <template x-if="editForm.action_type === 'script'">
-          <div class="form-group">
-            <label>Script path</label>
-            <input type="text" x-model="editForm.script" placeholder="/path/to/script.sh">
-          </div>
-        </template>
-
-        <template x-if="editForm.action_type === 'page'">
-          <div class="form-group">
-            <label>Target page</label>
-            <select x-model="editForm.page">
-              <option value="">-- select --</option>
-              <template x-for="p in pages" :key="p.name">
-                <option :value="p.name" x-text="p.name"></option>
-              </template>
-            </select>
-          </div>
-        </template>
-
-        <template x-if="editForm.action_type === 'keyboard'">
-          <div class="form-group">
-            <label>Key combination</label>
-            <div class="mod-row">
-              <button class="mod-btn" :class="{ active: editForm.modCtrl }" @click="toggleMod('ctrl')" type="button">Ctrl</button>
-              <button class="mod-btn" :class="{ active: editForm.modAlt }" @click="toggleMod('alt')" type="button">Alt</button>
-              <button class="mod-btn" :class="{ active: editForm.modShift }" @click="toggleMod('shift')" type="button">Shift</button>
-              <button class="mod-btn" :class="{ active: editForm.modSuper }" @click="toggleMod('super')" type="button">Super</button>
-            </div>
-            <div class="key-capture"
-                 x-ref="keyCapture"
-                 :class="{ capturing: isCapturingKey }"
-                 tabindex="0"
-                 @keydown.prevent="onCaptureKey"
-                 @blur="isCapturingKey = false"
-                 @click="startKeyCapture">
-              <span x-show="!isCapturingKey && editForm.mainKey" class="captured-key" x-text="displayKey(editForm.mainKey)"></span>
-              <span x-show="isCapturingKey" class="capture-hint">Press any key...</span>
-              <span x-show="!isCapturingKey && !editForm.mainKey" class="capture-placeholder">Click to capture</span>
-            </div>
-            <div class="key-chips" x-show="editForm.keys" style="margin-top:8px;">
-              <template x-for="(chip, ki) in keyChips" :key="ki">
-                <span class="key-chip" x-text="chip"></span>
-                <span x-show="ki < keyChips.length - 1" class="key-plus">+</span>
-              </template>
-            </div>
-          </div>
-        </template>
-      </div>
-
-      <!-- Display section -->
-      <button class="collapse-toggle" :class="{ open: showDisplay }" @click="showDisplay = !showDisplay" style="margin-top:8px;">
-        <i class="fas fa-chevron-right"></i> Display (periodic output)
-      </button>
-
-      <div x-show="showDisplay" x-transition>
         <div class="form-group">
           <label>Display mode</label>
           <div class="tab-row">
@@ -397,7 +541,7 @@
 
         <template x-if="editForm.display_mode === 'command'">
           <div class="form-group">
-            <label>Shell command</label>
+            <label>Command</label>
             <input type="text" x-model="editForm.display_command"
               placeholder="curl -s http://...">
           </div>

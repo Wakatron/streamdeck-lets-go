@@ -14,11 +14,23 @@ type Config struct {
 	Version     int            `json:"version"`
 	LogLevel    string         `json:"log_level"`
 	DefaultPage string         `json:"default_page"`
+	Font        string         `json:"font,omitempty"`
 	Devices     []DeviceConfig `json:"devices"`
 	Pages       []PageConfig   `json:"pages"`
 	AutoSwitch  []SwitchRule   `json:"auto_switch"`
 	Screensaver ScreensaverCfg `json:"screensaver"`
+	Timing      TimingConfig   `json:"timing,omitempty"`
 }
+
+type TimingConfig struct {
+	LongPressMs int `json:"long_press_ms,omitempty"`
+	DoubleTapMs int `json:"double_tap_ms,omitempty"`
+}
+
+const (
+	DefaultLongPressMs = 500
+	DefaultDoubleTapMs = 300
+)
 
 type DeviceConfig struct {
 	Serial     string `json:"serial"`
@@ -35,15 +47,20 @@ type PageConfig struct {
 }
 
 type KeyConfig struct {
-	Index      int         `json:"index"`
-	Icon       string      `json:"icon,omitempty"`
-	Background string      `json:"background,omitempty"`
-	Label      string      `json:"label,omitempty"`
-	Font       string      `json:"font,omitempty"`
-	FontSize   *float64    `json:"font_size,omitempty"`
-	IconScale  *float64    `json:"icon_scale,omitempty"`
-	Action     *Action     `json:"action,omitempty"`
-	Display    *DisplayCfg `json:"display,omitempty"`
+	Index      int           `json:"index"`
+	Icon       string        `json:"icon,omitempty"`
+	Background string        `json:"background,omitempty"`
+	Label      string        `json:"label,omitempty"`
+	Font       string        `json:"font,omitempty"`
+	FontSize   *float64      `json:"font_size,omitempty"`
+	IconScale  *float64      `json:"icon_scale,omitempty"`
+	Actions    []KeyAction   `json:"actions,omitempty"`
+	Display    *DisplayCfg   `json:"display,omitempty"`
+}
+
+type KeyAction struct {
+	Trigger string `json:"trigger"`
+	Action  `json:",inline"`
 }
 
 type Action struct {
@@ -54,6 +71,21 @@ type Action struct {
 	Page       string `json:"page,omitempty"`
 	Background bool   `json:"background,omitempty"`
 	Keys       string `json:"keys,omitempty"`
+}
+
+func (k *KeyConfig) UnmarshalJSON(data []byte) error {
+	type Alias KeyConfig
+	aux := &struct {
+		OldAction *Action `json:"action"`
+		*Alias
+	}{Alias: (*Alias)(k)}
+	if err := json.Unmarshal(data, aux); err != nil {
+		return err
+	}
+	if aux.OldAction != nil && len(k.Actions) == 0 {
+		k.Actions = []KeyAction{{Trigger: "tap", Action: *aux.OldAction}}
+	}
+	return nil
 }
 
 type DisplayCfg struct {
@@ -90,6 +122,10 @@ func DefaultConfig() *Config {
 				Keys: []KeyConfig{},
 			},
 		},
+		Timing: TimingConfig{
+			LongPressMs: DefaultLongPressMs,
+			DoubleTapMs: DefaultDoubleTapMs,
+		},
 	}
 }
 
@@ -120,6 +156,13 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, fmt.Errorf("parsing config: %w", err)
 	}
 
+	if cfg.Timing.LongPressMs <= 0 {
+		cfg.Timing.LongPressMs = DefaultLongPressMs
+	}
+	if cfg.Timing.DoubleTapMs <= 0 {
+		cfg.Timing.DoubleTapMs = DefaultDoubleTapMs
+	}
+
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid config: %w", err)
 	}
@@ -140,6 +183,14 @@ func (c *Config) Save(path string) error {
 		return fmt.Errorf("writing config: %w", err)
 	}
 	return nil
+}
+
+func validTrigger(t string) bool {
+	switch t {
+	case "tap", "long_press", "double_tap", "hold_start", "hold_end":
+		return true
+	}
+	return false
 }
 
 func (c *Config) Validate() error {
@@ -169,29 +220,41 @@ func (c *Config) Validate() error {
 			}
 			seenKeys[k.Index] = true
 
-			if k.Action != nil {
-				switch k.Action.Type {
+			seenTriggers := make(map[string]bool)
+			for _, ka := range k.Actions {
+				if ka.Trigger == "" {
+					return fmt.Errorf("page %s key %d: action trigger is required", p.Name, k.Index)
+				}
+				if !validTrigger(ka.Trigger) {
+					return fmt.Errorf("page %s key %d: unknown trigger %q", p.Name, k.Index, ka.Trigger)
+				}
+				if seenTriggers[ka.Trigger] {
+					return fmt.Errorf("page %s key %d: duplicate trigger %q", p.Name, k.Index, ka.Trigger)
+				}
+				seenTriggers[ka.Trigger] = true
+
+				switch ka.Type {
 				case "command":
-					if k.Action.Command == "" {
+					if ka.Command == "" {
 						return fmt.Errorf("page %s key %d: command required for command action", p.Name, k.Index)
 					}
 				case "builtin":
 				case "script":
-					if k.Action.Script == "" {
+					if ka.Script == "" {
 						return fmt.Errorf("page %s key %d: script path required for script action", p.Name, k.Index)
 					}
 				case "page":
-					if k.Action.Page == "" {
+					if ka.Page == "" {
 						return fmt.Errorf("page %s key %d: page name required for page action", p.Name, k.Index)
 					}
 				case "keyboard":
-					if k.Action.Keys == "" {
+					if ka.Keys == "" {
 						return fmt.Errorf("page %s key %d: keys required for keyboard action", p.Name, k.Index)
 					}
 				case "":
 					return fmt.Errorf("page %s key %d: action type is required", p.Name, k.Index)
 				default:
-					return fmt.Errorf("page %s key %d: unknown action type: %s", p.Name, k.Index, k.Action.Type)
+					return fmt.Errorf("page %s key %d: unknown action type: %s", p.Name, k.Index, ka.Type)
 				}
 			}
 
@@ -232,9 +295,11 @@ func (c *Config) Validate() error {
 
 	for _, p := range c.Pages {
 		for _, k := range p.Keys {
-			if k.Action != nil && k.Action.Type == "page" {
-				if !pageNames[k.Action.Page] {
-					return fmt.Errorf("page %s key %d: references unknown page %q", p.Name, k.Index, k.Action.Page)
+			for _, ka := range k.Actions {
+				if ka.Type == "page" {
+					if !pageNames[ka.Page] {
+						return fmt.Errorf("page %s key %d: references unknown page %q", p.Name, k.Index, ka.Page)
+					}
 				}
 			}
 		}

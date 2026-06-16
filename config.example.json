@@ -2,6 +2,7 @@
   "version": 1,
   "log_level": "info",
   "default_page": "main",
+  "font": "medium",
   "devices": [
     {
       "serial": "",
@@ -15,23 +16,45 @@
         {
           "index": 0,
           "icon": "fa:terminal",
-          "action": {
-            "type": "command",
-            "command": "kitty",
-            "background": true
-          }
+          "actions": [
+            {
+              "trigger": "tap",
+              "type": "command",
+              "command": "kitty",
+              "background": true
+            }
+          ]
         },
         {
           "index": 1,
           "icon": "fab:firefox",
           "label": "Browser",
-          "font": "medium",
           "font_size": 11,
-          "action": {
-            "type": "command",
-            "command": "firefox",
-            "background": true
-          }
+          "actions": [
+            {
+              "trigger": "tap",
+              "type": "command",
+              "command": "firefox",
+              "background": true
+            }
+          ]
+        },
+        {
+          "index": 7,
+          "icon": "fa:chevron-right",
+          "label": "Next",
+          "actions": [
+            {
+              "trigger": "tap",
+              "type": "builtin",
+              "builtin": "page:next"
+            },
+            {
+              "trigger": "long_press",
+              "type": "builtin",
+              "builtin": "page:prev"
+            }
+          ]
         }
       ]
     }
@@ -42,5 +65,9 @@
     "idle_seconds": 30,
     "image": "",
     "brightness": 10
+  },
+  "timing": {
+    "long_press_ms": 500,
+    "double_tap_ms": 300
   }
 }

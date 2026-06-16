@@ -6,7 +6,6 @@ document.addEventListener('alpine:init', () => {
     activePage: '',
     view: 'grid',
     showAdvanced: false,
-    showDisplay: false,
     toast: null,
     displayOutputs: {},
     isCapturingKey: false,
@@ -15,14 +14,37 @@ document.addEventListener('alpine:init', () => {
 
     // ── Edit state ──
     editing: null,
-    editForm: {},
+    editForm: {
+      actions: {
+        tap: {},
+        long_press: {},
+        double_tap: {},
+        hold: { start: {}, end: {} },
+      },
+    },
 
     // ── Sub-views ──
-    subView: null,       // 'backups', 'settings', 'switcher', null
+    subView: null,
 
     // ── Settings ──
     settingsForm: {},
     autoSwitchRules: [],
+
+    // ── Constants ──
+    actionIconMap: {
+      command: 'terminal',
+      builtin: 'cog',
+      script: 'file-code',
+      page: 'layer-group',
+      keyboard: 'keyboard',
+    },
+    actionTitleMap: {
+      command: 'Command',
+      builtin: 'Built-in',
+      script: 'Script',
+      page: 'Switch page',
+      keyboard: 'Keyboard shortcut',
+    },
 
     // ── Init ──
     async init() {
@@ -68,9 +90,12 @@ document.addEventListener('alpine:init', () => {
     syncSettings() {
       this.settingsForm = {
         brightness: this.config.devices?.[0]?.brightness || 75,
+        font: this.config.font || 'medium',
         screensaver_enabled: this.config.screensaver?.enabled || false,
         screensaver_idle: this.config.screensaver?.idle_seconds || 30,
         screensaver_brightness: this.config.screensaver?.brightness || 10,
+        long_press_ms: this.config.timing?.long_press_ms || 500,
+        double_tap_ms: this.config.timing?.double_tap_ms || 300,
       }
       this.autoSwitchRules = [...(this.config.auto_switch || [])]
     },
@@ -97,22 +122,37 @@ document.addEventListener('alpine:init', () => {
       const n = this.activeDeck.num_keys
       for (let i = 0; i < n; i++) {
         const kc = page.keys.find(k => k.index === i)
+        const dout = this.displayOutputs[i]
         keys.push({
           index: i,
           ...kc,
           configured: !!kc,
           hasDisplay: !!(kc?.display),
-          previewUrl: this.keyPreviewUrl(kc ? kc : {}),
+          hasAction: !!(kc?.actions?.length),
+          actionTypes: this.getActionTypes(kc?.actions || []),
+          displayBg: dout?.background || '',
+          displayText: dout?.text || '',
+          previewUrl: this.keyPreviewUrl(kc ? kc : {}, dout),
         })
       }
       return keys
     },
 
-    keyPreviewUrl(kc) {
+    getActionTypes(actions) {
+      const seen = {}
+      for (const a of actions) {
+        if (a.type && a.type !== 'none') {
+          seen[a.type] = true
+        }
+      }
+      return Object.keys(seen)
+    },
+
+    keyPreviewUrl(kc, dout) {
       const k = kc || {}
       let url = '/api/render?key_size=72'
       if (k.icon) url += `&icon=${encodeURIComponent(k.icon)}`
-      const label = this.displayOutputs[k.index] || k.label
+      const label = dout?.text || this.displayOutputs[k.index]?.text || k.label
       if (label) url += `&label=${encodeURIComponent(label)}`
       if (k.icon_scale != null) url += `&icon_scale=${k.icon_scale}`
       if (k.font_size != null) url += `&font_size=${k.font_size}`
@@ -133,33 +173,66 @@ document.addEventListener('alpine:init', () => {
       return ''
     },
 
+    // ── Multi-action helpers ──
+    getCurrentAction() {
+      const t = this.editForm.activeTrigger || 'tap'
+      if (t === 'hold') {
+        return this.editForm.actions?.hold?.[this.editForm.holdPhase || 'start']
+      }
+      return this.editForm.actions?.[t]
+    },
+
+    hasCurrentAction(trigger) {
+      const a = this.editForm.actions?.[trigger]
+      return a && a.type && a.type !== 'none'
+    },
+
+    hasHoldAction(phase) {
+      const a = this.editForm.actions?.hold?.[phase]
+      return a && a.type && a.type !== 'none'
+    },
+
+    triggerLabel(trigger) {
+      return { tap: 'Tap', long_press: 'Long Press', double_tap: 'Double Tap', hold: 'Hold' }[trigger] || trigger
+    },
+
+    // ── Keyboard helpers (for current action) ──
     get keyChips() {
-      if (!this.editForm.keys) return []
+      const a = this.getCurrentAction()
+      if (!a || !a.keys) return []
       const map = { ctrl: 'Ctrl', alt: 'Alt', shift: 'Shift', super: 'Super', meta: 'Super' }
-      return this.editForm.keys.split('+').map(k => map[k] || k.charAt(0).toUpperCase() + k.slice(1))
+      return a.keys.split('+').map(k => map[k] || k.charAt(0).toUpperCase() + k.slice(1))
     },
 
     toggleMod(mod) {
-      if (mod === 'ctrl') this.editForm.modCtrl = !this.editForm.modCtrl
-      else if (mod === 'alt') this.editForm.modAlt = !this.editForm.modAlt
-      else if (mod === 'shift') this.editForm.modShift = !this.editForm.modShift
-      else if (mod === 'super') this.editForm.modSuper = !this.editForm.modSuper
+      const a = this.getCurrentAction()
+      if (!a) return
+      if (mod === 'ctrl') a.modCtrl = !a.modCtrl
+      else if (mod === 'alt') a.modAlt = !a.modAlt
+      else if (mod === 'shift') a.modShift = !a.modShift
+      else if (mod === 'super') a.modSuper = !a.modSuper
       this.rebuildKeys()
     },
 
     rebuildKeys() {
+      const a = this.getCurrentAction()
+      if (!a) return
       const mods = []
-      if (this.editForm.modCtrl) mods.push('ctrl')
-      if (this.editForm.modAlt) mods.push('alt')
-      if (this.editForm.modShift) mods.push('shift')
-      if (this.editForm.modSuper) mods.push('super')
-      if (this.editForm.mainKey) mods.push(this.editForm.mainKey)
-      this.editForm.keys = mods.join('+')
+      if (a.modCtrl) mods.push('ctrl')
+      if (a.modAlt) mods.push('alt')
+      if (a.modShift) mods.push('shift')
+      if (a.modSuper) mods.push('super')
+      if (a.mainKey) mods.push(a.mainKey)
+      a.keys = mods.join('+')
     },
 
     startKeyCapture() {
       this.isCapturingKey = true
-      this.$nextTick(() => this.$refs.keyCapture?.focus())
+      this.$nextTick(() => {
+        this.$el.querySelectorAll('.key-capture').forEach(el => {
+          if (el.offsetParent !== null) el.focus()
+        })
+      })
     },
 
     onCaptureKey(e) {
@@ -177,7 +250,8 @@ document.addEventListener('alpine:init', () => {
         key = e.key.length === 1 ? e.key.toLowerCase() : e.key
       }
       if (!key) return
-      this.editForm.mainKey = key.toLowerCase()
+      const a = this.getCurrentAction()
+      if (a) a.mainKey = key.toLowerCase()
       this.isCapturingKey = false
       this.rebuildKeys()
     },
@@ -189,6 +263,10 @@ document.addEventListener('alpine:init', () => {
     },
 
     // ── Edit Key ──
+    defaultAction(trigger) {
+      return { trigger, type: 'none', command: '', builtin: '', script: '', page: '', keys: '', background: true, modCtrl: false, modAlt: false, modShift: false, modSuper: false, mainKey: '' }
+    },
+
     editKey(idx) {
       this.isCapturingKey = false
       const page = this.currentPage
@@ -196,12 +274,36 @@ document.addEventListener('alpine:init', () => {
       const kc = page.keys.find(k => k.index === idx)
       this.editing = idx
       this.showAdvanced = false
-      this.showDisplay = !!(kc?.display)
 
-      const action = kc?.action || {}
+      const existing = kc?.actions || []
 
-      const parts = (action.keys || '').toLowerCase().split('+')
-      const mainKey = parts.length > 0 ? parts.pop() : ''
+      const tap        = existing.find(a => a.trigger === 'tap') || null
+      const longPress  = existing.find(a => a.trigger === 'long_press') || null
+      const doubleTap  = existing.find(a => a.trigger === 'double_tap') || null
+      const holdStart  = existing.find(a => a.trigger === 'hold_start') || null
+      const holdEnd    = existing.find(a => a.trigger === 'hold_end') || null
+
+      const build = (src, trigger) => {
+        const def = this.defaultAction(trigger)
+        if (!src) return def
+        const parts = (src.keys || '').toLowerCase().split('+')
+        const main = parts.length > 0 ? parts.pop() : ''
+        return {
+          ...def,
+          type: src.type || 'none',
+          command: src.command || '',
+          builtin: src.builtin || '',
+          script: src.script || '',
+          page: src.page || '',
+          keys: src.keys || '',
+          background: src.background ?? true,
+          modCtrl: parts.includes('ctrl'),
+          modAlt: parts.includes('alt'),
+          modShift: parts.includes('shift'),
+          modSuper: parts.includes('super'),
+          mainKey: main,
+        }
+      }
 
       this.editForm = {
         icon: kc?.icon || '',
@@ -209,18 +311,17 @@ document.addEventListener('alpine:init', () => {
         icon_scale: kc?.icon_scale ?? 0.55,
         font_size: kc?.font_size ?? 16,
         bg_color: kc?.background || '',
-        action_type: action.type || 'command',
-        command: action.command || '',
-        builtin: action.builtin || '',
-        script: action.script || '',
-        page: action.page || '',
-        keys: action.keys || '',
-        modCtrl: parts.includes('ctrl'),
-        modAlt: parts.includes('alt'),
-        modShift: parts.includes('shift'),
-        modSuper: parts.includes('super'),
-        mainKey: mainKey,
-        background: action.background ?? true,
+        activeTrigger: 'tap',
+        holdPhase: 'start',
+        actions: {
+          tap: build(tap, 'tap'),
+          long_press: build(longPress, 'long_press'),
+          double_tap: build(doubleTap, 'double_tap'),
+          hold: {
+            start: build(holdStart, 'hold_start'),
+            end: build(holdEnd, 'hold_end'),
+          },
+        },
         display_mode: kc?.display ? (kc.display.command ? 'command' : 'script') : 'none',
         display_command: kc?.display?.command || '',
         display_script: kc?.display?.script || '',
@@ -251,7 +352,6 @@ document.addEventListener('alpine:init', () => {
 
       const dm = this.editForm.display_mode
       const hasDisplay = dm !== 'none'
-      const actionType = this.editForm.action_type
 
       if (dm === 'command' && !this.editForm.display_command) {
         this.showToast('Display command is required', 'error')
@@ -262,49 +362,47 @@ document.addEventListener('alpine:init', () => {
         return
       }
 
-      if (actionType && actionType !== 'none') {
-        if (actionType === 'command' && !this.editForm.command) {
-          if (!hasDisplay) { this.showToast('Command is required', 'error'); return }
+      // Validate and collect actions
+      const actions = []
+      const checkAction = (a) => {
+        if (!a || !a.type || a.type === 'none') return
+        if (a.type === 'command' && !a.command) return
+        if (a.type === 'script' && !a.script) return
+        if (a.type === 'page' && !a.page) return
+        if (a.type === 'keyboard' && !a.keys) return
+        const entry = {
+          trigger: a.trigger,
+          type: a.type,
+          command: a.type === 'command' ? a.command : undefined,
+          builtin: a.type === 'builtin' ? a.builtin : undefined,
+          script: a.type === 'script' ? a.script : undefined,
+          page: a.type === 'page' ? a.page : undefined,
+          keys: a.type === 'keyboard' ? a.keys : undefined,
+          background: a.background || undefined,
         }
-        if (actionType === 'script' && !this.editForm.script) {
-          if (!hasDisplay) { this.showToast('Script path is required', 'error'); return }
+        // Clean undefined
+        for (const k of Object.keys(entry)) {
+          if (entry[k] === undefined) delete entry[k]
         }
-        if (actionType === 'page' && !this.editForm.page) {
-          this.showToast('Target page is required', 'error')
-          return
-        }
-        if (actionType === 'keyboard' && !this.editForm.keys) {
-          if (!hasDisplay) { this.showToast('Key combination is required', 'error'); return }
-        }
+        actions.push(entry)
       }
+      checkAction(this.editForm.actions.tap)
+      checkAction(this.editForm.actions.long_press)
+      checkAction(this.editForm.actions.double_tap)
+      checkAction(this.editForm.actions.hold.start)
+      checkAction(this.editForm.actions.hold.end)
 
       const kc = {
         index: this.editing,
-        icon: this.editForm.icon,
-        label: this.editForm.label,
-        icon_scale: this.editForm.icon_scale,
-        font_size: this.editForm.font_size,
-        background: this.editForm.bg_color || '',
+        icon: this.editForm.icon || undefined,
+        label: this.editForm.label || undefined,
+        icon_scale: this.editForm.icon_scale !== 0.55 ? this.editForm.icon_scale : undefined,
+        font_size: this.editForm.font_size !== 16 ? this.editForm.font_size : undefined,
+        background: this.editForm.bg_color || undefined,
       }
 
-      if (actionType && actionType !== 'none') {
-        if (actionType === 'command' && this.editForm.command) {
-          kc.action = { type: 'command', command: this.editForm.command, background: this.editForm.background }
-        } else if (actionType === 'builtin') {
-          kc.action = { type: 'builtin', builtin: this.editForm.builtin }
-        } else if (actionType === 'script' && this.editForm.script) {
-          kc.action = { type: 'script', script: this.editForm.script }
-        } else if (actionType === 'page' && this.editForm.page) {
-          kc.action = { type: 'page', page: this.editForm.page }
-        } else if (actionType === 'keyboard' && this.editForm.keys) {
-          kc.action = { type: 'keyboard', keys: this.editForm.keys }
-        } else if (!hasDisplay) {
-          kc.action = null
-        } else {
-          kc.action = null
-        }
-      } else {
-        kc.action = null
+      if (actions.length > 0) {
+        kc.actions = actions
       }
 
       if (hasDisplay) {
@@ -317,8 +415,6 @@ document.addEventListener('alpine:init', () => {
         if (this.editForm.display_timeout) {
           kc.display.timeout = this.editForm.display_timeout
         }
-      } else {
-        kc.display = null
       }
 
       const existingIdx = page.keys.findIndex(k => k.index === this.editing)
@@ -414,10 +510,11 @@ document.addEventListener('alpine:init', () => {
         this.config.default_page = newName.trim()
       }
 
-      // Update page references
       for (const p of this.pages) {
         for (const k of p.keys) {
-          if (k.action?.page === oldName) k.action.page = newName.trim()
+          for (const a of (k.actions || [])) {
+            if (a.page === oldName) a.page = newName.trim()
+          }
         }
       }
       for (const r of (this.config.auto_switch || [])) {
@@ -458,10 +555,15 @@ document.addEventListener('alpine:init', () => {
         this.config.devices = [{ serial: '', brightness: 75 }]
       }
       this.config.devices[0].brightness = parseInt(this.settingsForm.brightness)
+      this.config.font = this.settingsForm.font || 'medium'
       this.config.screensaver = {
         enabled: this.settingsForm.screensaver_enabled,
         idle_seconds: parseInt(this.settingsForm.screensaver_idle) || 30,
         brightness: parseInt(this.settingsForm.screensaver_brightness) || 10,
+      }
+      this.config.timing = {
+        long_press_ms: parseInt(this.settingsForm.long_press_ms) || 500,
+        double_tap_ms: parseInt(this.settingsForm.double_tap_ms) || 300,
       }
       this.config.auto_switch = this.autoSwitchRules
       await this.saveConfig()
@@ -569,7 +671,6 @@ document.addEventListener('alpine:init', () => {
     },
 
     backupNameTime(name) {
-      // Extract date from config.YYYY-MM-DDTHH-MM-SS.json
       const m = name.match(/config\.(.+)\.json/)
       if (!m) return name
       return m[1].replace('T', ' ')

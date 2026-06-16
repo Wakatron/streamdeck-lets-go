@@ -57,7 +57,7 @@ func RenderKeyToImage(k *config.KeyConfig, keySize int) image.Image {
 				if k.FontSize != nil {
 					fontSize = *k.FontSize
 				}
-				return renderUnicodeText(k.Label, fontSize, keySize, bg)
+				return renderUnicodeText(k.Label, fontSize, keySize, bg, color.White)
 			}
 			return blankImage(keySize, bg)
 		}

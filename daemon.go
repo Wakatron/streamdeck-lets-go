@@ -56,6 +56,7 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 	pageMgrs := make([]*PageManager, len(decks))
 	for i, d := range decks {
 		pageMgrs[i] = NewPageManager(d)
+		pageMgrs[i].defaultFont = cfg.Font
 		pageMgrs[i].LoadPages(cfg.Pages)
 	}
 	primaryPM := pageMgrs[0]
@@ -98,6 +99,21 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 	asm := NewAutoSwitchManager(cfg.AutoSwitch, cfg.DefaultPage)
 
 	ssCtrl := NewScreensaver(&cfg.Screensaver)
+
+	ge := NewGestureEngine(cfg.Timing.LongPressMs, cfg.Timing.DoubleTapMs, func(a *config.Action) {
+		if a == nil {
+			return
+		}
+		if err := ExecuteAction(a, primaryDeck, primaryPM); err != nil {
+			slog.Error("execute action", "error", err)
+		}
+		if a.Type == "page" {
+			asm.NotifyManualPage(a.Page)
+			for _, pm := range pageMgrs[1:] {
+				pm.ActivatePage(a.Page)
+			}
+		}
+	})
 
 	reconnectTicker := time.NewTicker(5 * time.Second)
 	defer reconnectTicker.Stop()
@@ -146,35 +162,24 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 						}
 					}
 
-					for idx, output := range savedOutputs {
-						primaryPM.ReRenderDisplayKey(idx, output)
-					}
-				}
-
-				page := primaryPM.ActivePage()
-				if page == nil {
-					continue
-				}
-				for _, k := range page.Keys {
-					if k.Index == evt.Index && k.Action != nil {
-						slog.Debug("key pressed", "index", evt.Index, "action", k.Action.Type)
-
-						if k.Action.Type == "page" {
-							asm.NotifyManualPage(k.Action.Page)
+					for idx, dout := range savedOutputs {
+						if dout != nil {
+							primaryPM.ReRenderDisplayKey(idx, dout.Text)
 						}
-
-						go func(a *config.Action) {
-							if err := ExecuteAction(a, primaryDeck, primaryPM); err != nil {
-								slog.Error("execute action", "error", err)
-							}
-							if a.Type == "page" {
-								for _, pm := range pageMgrs[1:] {
-									pm.ActivatePage(a.Page)
-								}
-							}
-						}(k.Action)
-						break
 					}
+				}
+			}
+
+			page := primaryPM.ActivePage()
+			if page == nil {
+				continue
+			}
+			for _, k := range page.Keys {
+				if k.Index == evt.Index {
+					if len(k.Actions) > 0 {
+						ge.HandleEvent(evt, k.Actions)
+					}
+					break
 				}
 			}
 
@@ -209,10 +214,12 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 				for _, d := range decks {
 					d.SetBrightness(deviceBrightness(cfg, d.Serial()))
 				}
-				for _, pm := range pageMgrs {
-					pm.stopPeriodicKeys()
-					pm.LoadPages(cfg.Pages)
-				}
+			for _, pm := range pageMgrs {
+				pm.stopPeriodicKeys()
+				pm.defaultFont = cfg.Font
+				pm.LoadPages(cfg.Pages)
+			}
+				ge.ReloadTiming(cfg.Timing.LongPressMs, cfg.Timing.DoubleTapMs)
 				asm.Reload(cfg.AutoSwitch)
 				if len(cfg.AutoSwitch) > 0 && detector == nil {
 					detector = NewWindowDetector()
@@ -285,6 +292,7 @@ func reconnectDeck(ctx context.Context, cfg *config.Config, pm **PageManager, as
 		newDeck, err := OpenDeck("")
 		if err == nil {
 			*pm = NewPageManager(newDeck)
+			(*pm).defaultFont = cfg.Font
 			(*pm).LoadPages(cfg.Pages)
 			(*pm).ActivatePage(cfg.DefaultPage)
 			(*pm).startPeriodicKeys()

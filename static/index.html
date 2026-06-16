@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StreamDeck</title>
+<script src="/static/app.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
+<link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+<div x-data="deckApp" x-init="init()" class="app" @keydown.escape="editing = null; subView = null">
+
+  <!-- ═══ Header ═══ -->
+  <header>
+    <button class="icon-btn" @click="subView = 'switcher'" title="Switch page">
+      <i class="fas fa-layer-group"></i>
+    </button>
+
+    <div class="page-nav" x-show="view === 'grid'">
+      <template x-for="(p, i) in pages" :key="p.name">
+        <span class="dot"
+          :class="{ active: p.name === activePage }"
+          @click="switchPage(p.name)"
+          :title="p.name"></span>
+      </template>
+    </div>
+
+    <span x-show="view !== 'grid'" x-text="view === 'settings' ? 'Settings' : 'Backups'"
+      style="font-size:14px;font-weight:600;"></span>
+
+    <div class="header-actions">
+      <button class="icon-btn" @click="view = 'grid'; subView = null" title="Grid">
+        <i class="fas fa-table-cells"></i>
+      </button>
+      <button class="icon-btn" @click="view = 'settings'; subView = null" title="Settings">
+        <i class="fas fa-gear"></i>
+      </button>
+      <button class="icon-btn" @click="view = 'backups'; loadBackups(); subView = null" title="Backups">
+        <i class="fas fa-floppy-disk"></i>
+      </button>
+    </div>
+  </header>
+
+  <!-- ═══ Grid View ═══ -->
+  <main x-show="view === 'grid' && !subView">
+    <div class="deck-grid">
+      <template x-for="key in gridKeys" :key="key.index">
+        <button class="key-btn"
+          :class="{ empty: !key.configured }"
+          @click="editKey(key.index)">
+          <img x-show="key.configured && key.background"
+             :src="key.previewUrl" alt="">
+          <i x-show="key.configured && !key.background && isFAIcon(key.icon)"
+             :class="faClass(key.icon)" class="fa-preview"></i>
+          <img x-show="key.configured && !key.background && !isFAIcon(key.icon) && key.icon"
+             :src="key.previewUrl" alt="">
+          <span x-show="key.configured && !key.background && !key.icon && key.label"
+            style="font-size:12px;color:#fff;opacity:0.75;text-align:center;line-height:1.2;padding:4px;"
+            x-text="key.label"></span>
+          <span x-show="!key.configured" style="color:var(--text-muted);font-size:24px;opacity:0.5;">+</span>
+          <i x-show="key.action?.type === 'keyboard'" class="fas fa-keyboard display-indicator" title="Keyboard shortcut" style="left:4px;right:auto;"></i>
+          <i x-show="key.hasDisplay" class="fas fa-arrows-rotate display-indicator" title="Periodic display"></i>
+        </button>
+      </template>
+    </div>
+
+    <div class="toolbar">
+      <button class="btn btn-outline" @click="addPage">+ Add page</button>
+      <button class="btn btn-outline" @click="deletePage"
+        :disabled="pages.length <= 1"
+        style="margin-left:auto;">Delete page</button>
+      <button class="btn btn-outline" @click="renamePage">Rename</button>
+    </div>
+  </main>
+
+  <!-- ═══ Page Switcher (sub-view) ═══ -->
+  <main x-show="view === 'grid' && subView === 'switcher'" style="justify-content:flex-start;padding-top:12px;">
+    <div class="panel" style="width:100%;">
+      <h3>Pages</h3>
+      <template x-for="p in pages" :key="p.name">
+        <button class="btn btn-outline" style="display:block;width:100%;margin-bottom:4px;text-align:left;"
+          :style="{ borderColor: p.name === activePage ? 'var(--accent)' : '' }"
+          @click="switchPage(p.name); subView = null">
+          <span x-text="p.name"></span>
+          <span style="float:right;color:var(--text-muted);font-size:11px;"
+            x-text="p.keys.length + ' keys'"></span>
+        </button>
+      </template>
+    </div>
+  </main>
+
+  <!-- ═══ Settings View ═══ -->
+  <main x-show="view === 'settings'" style="justify-content:flex-start;padding-top:12px;">
+    <div class="panel" style="width:100%;">
+
+      <!-- Device -->
+      <div class="panel-section">
+        <h4>Device</h4>
+        <div class="form-group">
+          <label>Brightness</label>
+          <div class="slider-group">
+            <input type="range" min="0" max="100" x-model.number="settingsForm.brightness">
+            <span class="value" x-text="settingsForm.brightness + '%'"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Screensaver -->
+      <div class="panel-section">
+        <h4>Screensaver</h4>
+        <div class="checkbox-row">
+          <input type="checkbox" id="ss-enabled" x-model="settingsForm.screensaver_enabled">
+          <label for="ss-enabled">Enable screensaver</label>
+        </div>
+        <div class="form-row" x-show="settingsForm.screensaver_enabled">
+          <div class="form-group">
+            <label>Idle (seconds)</label>
+            <input type="number" min="5" x-model.number="settingsForm.screensaver_idle">
+          </div>
+          <div class="form-group">
+            <label>Brightness on idle</label>
+            <input type="number" min="0" max="100" x-model.number="settingsForm.screensaver_brightness">
+          </div>
+        </div>
+      </div>
+
+      <!-- Auto-switch -->
+      <div class="panel-section">
+        <h4>Auto-switch rules</h4>
+        <template x-for="(rule, i) in autoSwitchRules" :key="i">
+          <div class="rule-item">
+            <div style="flex:1;">
+              <div class="form-row">
+                <div class="form-group" style="margin-bottom:4px;">
+                  <label>WM Class</label>
+                  <input type="text" x-model="rule.wm_class" placeholder="regex">
+                </div>
+                <div class="form-group" style="margin-bottom:4px;">
+                  <label>Title</label>
+                  <input type="text" x-model="rule.title" placeholder="regex">
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group" style="margin-bottom:0;">
+                  <label>Page</label>
+                  <select x-model="rule.page">
+                    <option value="">--</option>
+                    <template x-for="p in pages" :key="p.name">
+                      <option :value="p.name" x-text="p.name"></option>
+                    </template>
+                  </select>
+                </div>
+                <div class="checkbox-row" style="margin-bottom:0;padding-top:16px;">
+                  <input type="checkbox" x-model="rule.stay">
+                  <label>Stay</label>
+                </div>
+              </div>
+            </div>
+            <button class="btn btn-danger" style="flex-shrink:0;" @click="removeAutoSwitchRule(i)">x</button>
+          </div>
+        </template>
+        <button class="btn btn-outline" @click="addAutoSwitchRule" style="width:100%;margin-top:8px;">
+          + Add rule
+        </button>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn btn-primary" @click="saveSettings">Save settings</button>
+      </div>
+    </div>
+  </main>
+
+  <!-- ═══ Backup View ═══ -->
+  <main x-show="view === 'backups'" style="justify-content:flex-start;padding-top:12px;">
+    <div class="panel" style="width:100%;">
+
+      <div class="panel-section">
+        <h4>Actions</h4>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-primary" @click="downloadConfig">
+            <i class="fas fa-download" style="margin-right:4px;"></i> Export JSON
+          </button>
+          <button class="btn btn-outline" @click="restoreConfig">
+            <i class="fas fa-upload" style="margin-right:4px;"></i> Restore
+          </button>
+        </div>
+      </div>
+
+      <div class="panel-section">
+        <h4>Auto backups <span style="font-weight:400;color:var(--text-muted);"
+          x-text="backups.length ? '(' + backups.length + ')' : ''"></span></h4>
+        <template x-if="backups.length === 0">
+          <p style="color:var(--text-muted);font-size:12px;">No backups yet. They are created automatically when you save.</p>
+        </template>
+        <template x-for="b in backups" :key="b.name">
+          <div class="backup-item">
+            <div>
+              <div x-text="backupNameTime(b.name)"></div>
+              <div class="meta" x-text="formatSize(b.size)"></div>
+            </div>
+            <div style="display:flex;gap:4px;">
+              <button class="btn btn-outline" style="padding:4px 8px;font-size:11px;"
+                @click="downloadBackup(b.name)" title="Download">
+                <i class="fas fa-download"></i>
+              </button>
+              <button class="btn btn-outline" style="padding:4px 8px;font-size:11px;"
+                @click="restoreBackup(b.name)" title="Restore">
+                <i class="fas fa-rotate-left"></i>
+              </button>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+  </main>
+
+  <!-- ═══ Key Editor Modal ═══ -->
+  <div class="modal-overlay" x-show="editing !== null" @click.self="editing = null">
+    <div class="modal" x-show="editing !== null" x-transition>
+      <h3>Edit Key <span x-text="editing + 1"></span></h3>
+
+      <!-- Preview -->
+      <div class="preview-box" @click="pickImage" title="Click to upload image">
+        <img :src="editPreviewUrl" alt="">
+        <div class="preview-overlay">
+          <i class="fas fa-image"></i>
+        </div>
+      </div>
+      <input type="file" accept="image/*" id="image-picker" style="display:none"
+        x-ref="fileInput" @change="onImagePicked">
+
+      <!-- Basic fields -->
+      <div class="form-group">
+        <label>Icon</label>
+        <input type="text" x-model="editForm.icon"
+          placeholder="fa:terminal, @system-icon, /path/to/image.png">
+      </div>
+      <div class="form-group">
+        <label>Label</label>
+        <input type="text" x-model="editForm.label" placeholder="Optional text">
+      </div>
+
+      <!-- Advanced toggle -->
+      <button class="collapse-toggle" :class="{ open: showAdvanced }" @click="showAdvanced = !showAdvanced">
+        <i class="fas fa-chevron-right"></i> More
+      </button>
+
+      <!-- Advanced fields -->
+      <div x-show="showAdvanced" x-transition>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Icon Scale</label>
+            <input type="number" step="0.01" min="0.1" max="1.0" x-model.number="editForm.icon_scale">
+          </div>
+          <div class="form-group">
+            <label>Font Size</label>
+            <input type="number" step="0.5" min="8" max="32" x-model.number="editForm.font_size">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Background</label>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <input type="color" x-model="editForm.bg_color"
+                   style="width:40px;height:40px;padding:2px;border-radius:var(--radius-xs);cursor:pointer;">
+            <input type="text" x-model="editForm.bg_color"
+                   placeholder="#rrggbb or #rrggbbaa" maxlength="9"
+                   style="flex:1;">
+            <button class="icon-btn" style="width:24px;height:24px;font-size:10px;flex-shrink:0;"
+                    @click="editForm.background = ''" title="Clear"
+                    x-show="editForm.background !== ''">
+              <i class="fas fa-xmark"></i>
+            </button>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Action type</label>
+          <select x-model="editForm.action_type">
+            <option value="none">None</option>
+            <option value="command">Command</option>
+            <option value="builtin">Builtin</option>
+            <option value="script">Script</option>
+            <option value="page">Page</option>
+            <option value="keyboard">Keyboard shortcut</option>
+          </select>
+        </div>
+
+        <!-- Command fields -->
+        <template x-if="editForm.action_type === 'command'">
+          <div>
+            <div class="form-group">
+              <label>Command</label>
+              <input type="text" x-model="editForm.command" placeholder="firefox">
+            </div>
+            <div class="checkbox-row">
+              <input type="checkbox" id="bg-cb" x-model="editForm.bg_color">
+              <label for="bg-cb">Run in background</label>
+            </div>
+          </div>
+        </template>
+
+        <template x-if="editForm.action_type === 'builtin'">
+          <div class="form-group">
+            <label>Builtin action</label>
+            <select x-model="editForm.builtin">
+              <option value="">-- select --</option>
+              <option value="volume_up">Volume Up</option>
+              <option value="volume_down">Volume Down</option>
+              <option value="volume_mute">Volume Mute</option>
+              <option value="brightness_up">Brightness Up</option>
+              <option value="brightness_down">Brightness Down</option>
+              <option value="media_play_pause">Play/Pause</option>
+              <option value="media_next">Next Track</option>
+              <option value="media_prev">Previous Track</option>
+              <option value="media_stop">Stop</option>
+            </select>
+          </div>
+        </template>
+
+        <template x-if="editForm.action_type === 'script'">
+          <div class="form-group">
+            <label>Script path</label>
+            <input type="text" x-model="editForm.script" placeholder="/path/to/script.sh">
+          </div>
+        </template>
+
+        <template x-if="editForm.action_type === 'page'">
+          <div class="form-group">
+            <label>Target page</label>
+            <select x-model="editForm.page">
+              <option value="">-- select --</option>
+              <template x-for="p in pages" :key="p.name">
+                <option :value="p.name" x-text="p.name"></option>
+              </template>
+            </select>
+          </div>
+        </template>
+
+        <template x-if="editForm.action_type === 'keyboard'">
+          <div class="form-group">
+            <label>Key combination</label>
+            <div class="mod-row">
+              <button class="mod-btn" :class="{ active: editForm.modCtrl }" @click="toggleMod('ctrl')" type="button">Ctrl</button>
+              <button class="mod-btn" :class="{ active: editForm.modAlt }" @click="toggleMod('alt')" type="button">Alt</button>
+              <button class="mod-btn" :class="{ active: editForm.modShift }" @click="toggleMod('shift')" type="button">Shift</button>
+              <button class="mod-btn" :class="{ active: editForm.modSuper }" @click="toggleMod('super')" type="button">Super</button>
+            </div>
+            <div class="key-capture"
+                 x-ref="keyCapture"
+                 :class="{ capturing: isCapturingKey }"
+                 tabindex="0"
+                 @keydown.prevent="onCaptureKey"
+                 @blur="isCapturingKey = false"
+                 @click="startKeyCapture">
+              <span x-show="!isCapturingKey && editForm.mainKey" class="captured-key" x-text="displayKey(editForm.mainKey)"></span>
+              <span x-show="isCapturingKey" class="capture-hint">Press any key...</span>
+              <span x-show="!isCapturingKey && !editForm.mainKey" class="capture-placeholder">Click to capture</span>
+            </div>
+            <div class="key-chips" x-show="editForm.keys" style="margin-top:8px;">
+              <template x-for="(chip, ki) in keyChips" :key="ki">
+                <span class="key-chip" x-text="chip"></span>
+                <span x-show="ki < keyChips.length - 1" class="key-plus">+</span>
+              </template>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <!-- Display section -->
+      <button class="collapse-toggle" :class="{ open: showDisplay }" @click="showDisplay = !showDisplay" style="margin-top:8px;">
+        <i class="fas fa-chevron-right"></i> Display (periodic output)
+      </button>
+
+      <div x-show="showDisplay" x-transition>
+        <div class="form-group">
+          <label>Display mode</label>
+          <div class="tab-row">
+            <button class="tab-btn" :class="{ active: editForm.display_mode === 'none' }"
+              @click="editForm.display_mode = 'none'">Off</button>
+            <button class="tab-btn" :class="{ active: editForm.display_mode === 'command' }"
+              @click="editForm.display_mode = 'command'">Command</button>
+            <button class="tab-btn" :class="{ active: editForm.display_mode === 'script' }"
+              @click="editForm.display_mode = 'script'">Script</button>
+          </div>
+        </div>
+
+        <template x-if="editForm.display_mode === 'command'">
+          <div class="form-group">
+            <label>Shell command</label>
+            <input type="text" x-model="editForm.display_command"
+              placeholder="curl -s http://...">
+          </div>
+        </template>
+
+        <template x-if="editForm.display_mode === 'script'">
+          <div class="form-group">
+            <label>Script path</label>
+            <input type="text" x-model="editForm.display_script"
+              placeholder="/path/to/script.sh">
+          </div>
+        </template>
+
+        <template x-if="editForm.display_mode !== 'none'">
+          <div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Interval</label>
+                <input type="text" x-model="editForm.display_interval" placeholder="30s">
+              </div>
+              <div class="form-group">
+                <label>Timeout</label>
+                <input type="text" x-model="editForm.display_timeout" placeholder="30s">
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Max output length</label>
+              <input type="number" x-model.number="editForm.display_max_len" min="16" max="4096" placeholder="128">
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <!-- Actions -->
+      <div class="modal-actions">
+        <button class="btn btn-primary" @click="saveKey">Save</button>
+        <button class="btn btn-danger" @click="deleteKey">Delete</button>
+        <button class="btn btn-outline" @click="editing = null">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ Toast ═══ -->
+  <div class="toast" :class="toast?.type" x-show="toast" x-transition x-text="toast?.msg"></div>
+
+</div>
+</body>
+</html>

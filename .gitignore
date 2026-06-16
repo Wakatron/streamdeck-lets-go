@@ -1,0 +1,5 @@
+streamdeck-lets-go
+*.test
+*.out
+*.exe
+/images/

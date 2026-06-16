@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "log_level": "info",
+  "default_page": "main",
+  "devices": [
+    {
+      "serial": "",
+      "brightness": 75
+    }
+  ],
+  "pages": [
+    {
+      "name": "main",
+      "keys": [
+        {
+          "index": 0,
+          "icon": "fa:terminal",
+          "action": {
+            "type": "command",
+            "command": "kitty",
+            "background": true
+          }
+        },
+        {
+          "index": 1,
+          "icon": "fab:firefox",
+          "label": "Browser",
+          "font": "medium",
+          "font_size": 11,
+          "action": {
+            "type": "command",
+            "command": "firefox",
+            "background": true
+          }
+        }
+      ]
+    }
+  ],
+  "auto_switch": [],
+  "screensaver": {
+    "enabled": false,
+    "idle_seconds": 30,
+    "image": "",
+    "brightness": 10
+  }
+}

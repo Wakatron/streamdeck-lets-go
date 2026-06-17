@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/bearsh/hid"
 	"github.com/dh1tw/streamdeck"
@@ -319,7 +320,7 @@ func (d *Deck) WriteText(keyIndex int, text string, bg color.Color, fontName str
 	})
 }
 
-func (d *Deck) WriteTextOnImage(keyIndex int, img image.Image, text, fontName string, fontSize float64) error {
+func (d *Deck) WriteTextOnImage(keyIndex int, img image.Image, text, fontName string, fontSize float64, showLabelBackground bool) error {
 	ks := d.cfg.KeySize
 
 	g := gift.New(
@@ -338,12 +339,14 @@ func (d *Deck) WriteTextOnImage(keyIndex int, img image.Image, text, fontName st
 			font = streamdeck.MonoMedium
 		}
 
-		barHeight := 20
-		if ks < 72 {
-			barHeight = 18
+		if showLabelBackground {
+			barHeight := 20
+			if ks < 72 {
+				barHeight = 18
+			}
+			barRect := image.Rect(0, ks-barHeight, ks, ks)
+			draw.Draw(rgba, barRect, &image.Uniform{color.RGBA{0, 0, 0, 180}}, image.Point{}, draw.Over)
 		}
-		barRect := image.Rect(0, ks-barHeight, ks, ks)
-		draw.Draw(rgba, barRect, &image.Uniform{color.RGBA{0, 0, 0, 180}}, image.Point{}, draw.Over)
 
 		offsetY := 24
 		baselineY := ks - 6
@@ -353,7 +356,7 @@ func (d *Deck) WriteTextOnImage(keyIndex int, img image.Image, text, fontName st
 		}
 
 		charW := fontSize * 0.55
-		textW := int(float64(len(text)) * charW)
+		textW := int(float64(utf8.RuneCountInString(text)) * charW)
 		posX := (ks - textW) / 2
 		if posX < 2 {
 			posX = 2

@@ -41,14 +41,15 @@ type DisplayOutput struct {
 }
 
 type PageManager struct {
-	mu             sync.RWMutex
-	pages          map[string]*config.PageConfig
-	active         string
-	deck           *Deck
-	keyStates      map[int]*keyState
-	displayOutputs map[int]*DisplayOutput
-	displayMu      sync.RWMutex
-	defaultFont    string
+	mu                  sync.RWMutex
+	pages               map[string]*config.PageConfig
+	active              string
+	deck                *Deck
+	keyStates           map[int]*keyState
+	displayOutputs      map[int]*DisplayOutput
+	displayMu           sync.RWMutex
+	defaultFont         string
+	showLabelBackground bool
 }
 
 func NewPageManager(deck *Deck) *PageManager {
@@ -221,7 +222,7 @@ func (pm *PageManager) renderKey(idx int, k *config.KeyConfig) {
 		}
 
 		if k.Label != "" {
-			if err := pm.deck.WriteTextOnImage(idx, img, k.Label, onImgFontName, onImgFontSize); err != nil {
+			if err := pm.deck.WriteTextOnImage(idx, img, k.Label, onImgFontName, onImgFontSize, pm.showLabelBackground); err != nil {
 				slog.Warn("write text on image", "error", err)
 				pm.deck.FillImage(idx, img)
 			}
@@ -237,7 +238,7 @@ func (pm *PageManager) renderKey(idx int, k *config.KeyConfig) {
 				ks := pm.deck.KeySize()
 				img := image.NewRGBA(image.Rect(0, 0, ks, ks))
 				draw.Draw(img, img.Bounds(), &image.Uniform{bg}, image.Point{}, draw.Src)
-				if err := pm.deck.WriteTextOnImage(idx, img, k.Label, fontName, fontSize); err != nil {
+				if err := pm.deck.WriteTextOnImage(idx, img, k.Label, fontName, fontSize, pm.showLabelBackground); err != nil {
 					slog.Warn("write text on image", "error", err)
 					pm.deck.FillImage(idx, img)
 				}
@@ -469,7 +470,7 @@ func (pm *PageManager) renderKeyOutput(idx int, d *config.DisplayCfg, output str
 			}
 		}
 
-		composite := renderUnicodeTextOnImage(img, text, fontSize, pm.deck.KeySize(), fg)
+		composite := renderUnicodeTextOnImage(img, text, fontSize, pm.deck.KeySize(), fg, pm.showLabelBackground)
 		if err := pm.deck.FillImage(idx, composite); err != nil {
 			slog.Warn("fill image", "error", err)
 		}
@@ -667,7 +668,7 @@ func renderUnicodeText(text string, fontSize float64, keySize int, bg, fg color.
 	return rgba
 }
 
-func renderUnicodeTextOnImage(baseImg image.Image, text string, fontSize float64, keySize int, fg color.Color) *image.RGBA {
+func renderUnicodeTextOnImage(baseImg image.Image, text string, fontSize float64, keySize int, fg color.Color, showLabelBackground bool) *image.RGBA {
 	g := gift.New(gift.Resize(keySize, keySize, gift.LanczosResampling))
 	rgba := image.NewRGBA(image.Rect(0, 0, keySize, keySize))
 	g.Draw(rgba, baseImg)
@@ -676,8 +677,10 @@ func renderUnicodeTextOnImage(baseImg image.Image, text string, fontSize float64
 	if keySize < 72 {
 		barHeight = 16
 	}
-	barRect := image.Rect(0, keySize-barHeight, keySize, keySize)
-	draw.Draw(rgba, barRect, &image.Uniform{color.RGBA{0, 0, 0, 180}}, image.Point{}, draw.Over)
+	if showLabelBackground {
+		barRect := image.Rect(0, keySize-barHeight, keySize, keySize)
+		draw.Draw(rgba, barRect, &image.Uniform{color.RGBA{0, 0, 0, 180}}, image.Point{}, draw.Over)
+	}
 
 	if text == "" || fg == nil {
 		return rgba
@@ -870,6 +873,34 @@ func loadImage(path string, targetSize int, faScale float64) (image.Image, error
 	img, _, err := image.Decode(f)
 	if err != nil {
 		return nil, fmt.Errorf("decode: %w", err)
+	}
+
+	// For raster images, apply scaling and centering when targetSize > 0
+	if targetSize > 0 && faScale > 0 {
+		displaySize := int(float64(targetSize) * faScale)
+		if displaySize > targetSize {
+			displaySize = targetSize
+		}
+		if displaySize < 1 {
+			displaySize = 1
+		}
+
+		// Resize to displaySize
+		if img.Bounds().Dx() != displaySize || img.Bounds().Dy() != displaySize {
+			g := gift.New(gift.Resize(displaySize, displaySize, gift.LanczosResampling))
+			scaled := image.NewRGBA(image.Rect(0, 0, displaySize, displaySize))
+			g.Draw(scaled, img)
+			img = scaled
+		}
+
+		// Center on targetSize canvas
+		if displaySize < targetSize {
+			canvas := image.NewRGBA(image.Rect(0, 0, targetSize, targetSize))
+			offX := (targetSize - displaySize) / 2
+			offY := (targetSize - displaySize) / 2
+			draw.Draw(canvas, image.Rect(offX, offY, offX+displaySize, offY+displaySize), img, image.Point{}, draw.Over)
+			img = canvas
+		}
 	}
 
 	imageCache.Store(key, img)

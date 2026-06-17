@@ -232,6 +232,9 @@ func deckBuiltinAction(action string, deck *Deck) error {
 
 func keyboardTool() string {
 	if os.Getenv("WAYLAND_DISPLAY") != "" {
+		if _, err := exec.LookPath("ydotool"); err == nil {
+			return "ydotool"
+		}
 		if _, err := exec.LookPath("wtype"); err == nil {
 			return "wtype"
 		}
@@ -264,6 +267,8 @@ func execKeyboard(a *config.Action) error {
 	}
 
 	switch tool {
+	case "ydotool":
+		return execYDOTool(keys)
 	case "wtype":
 		return execWType(parts)
 	case "xdotool":
@@ -295,6 +300,14 @@ func execWType(parts []string) error {
 
 func execXDoTool(keys string) error {
 	cmd := exec.Command("xdotool", "key", keys)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
+func execYDOTool(keys string) error {
+	// Use 'type' command instead of 'key' for better compatibility with Wine/games on Wayland
+	cmd := exec.Command("ydotool", "type", keys)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()

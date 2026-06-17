@@ -289,8 +289,19 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 
 func checkKeyboardTool() {
 	if os.Getenv("WAYLAND_DISPLAY") != "" {
-		if _, err := exec.LookPath("wtype"); err != nil {
-			slog.Warn("keyboard actions require wtype on Wayland — install it (e.g. apk add wtype) and restart")
+		// On Wayland, prefer ydotool over wtype
+		if _, err := exec.LookPath("ydotool"); err == nil {
+			// Start ydotoold daemon if not already running
+			cmd := exec.Command("ydotoold")
+			cmd.Stdout = nil
+			cmd.Stderr = nil
+			// Run in background, don't wait
+			_ = cmd.Start()
+			slog.Info("ydotoold daemon started for keyboard input")
+		} else if _, err := exec.LookPath("wtype"); err == nil {
+			slog.Warn("ydotool not found, falling back to wtype — consider installing ydotool for better Wayland support (e.g. apk add ydotool)")
+		} else {
+			slog.Warn("keyboard actions require ydotool or wtype on Wayland — install one (e.g. apk add ydotool) and restart")
 		}
 	} else {
 		if _, err := exec.LookPath("xdotool"); err != nil {

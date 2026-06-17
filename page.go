@@ -853,7 +853,7 @@ func loadImage(path string, targetSize int, faScale float64) (image.Image, error
 	}
 
 	if strings.HasSuffix(resolved, ".svg") {
-		img, err := svgToPNG(resolved, targetSize)
+		img, err := svgToPNG(resolved, targetSize, faScale)
 		if err != nil {
 			return nil, err
 		}

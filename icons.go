@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"image"
+	"image/draw"
 	_ "image/png"
 	"os"
 	"os/exec"
@@ -147,10 +148,22 @@ func findSystemIcon(name string, targetSize int) (string, error) {
 	return "", fmt.Errorf("system icon %q not found", name)
 }
 
-func svgToPNG(svgPath string, targetSize int) (image.Image, error) {
+func svgToPNG(svgPath string, targetSize int, scale float64) (image.Image, error) {
+	if scale <= 0 {
+		scale = 0.55
+	}
+
+	renderSize := targetSize
+	if scale < 1 {
+		renderSize = int(float64(targetSize) * scale)
+		if renderSize < 1 {
+			renderSize = 1
+		}
+	}
+
 	cmd := exec.Command("rsvg-convert",
-		"-w", strconv.Itoa(targetSize),
-		"-h", strconv.Itoa(targetSize),
+		"-w", strconv.Itoa(renderSize),
+		"-h", strconv.Itoa(renderSize),
 		"-f", "png",
 		svgPath,
 	)
@@ -162,6 +175,15 @@ func svgToPNG(svgPath string, targetSize int) (image.Image, error) {
 	if err != nil {
 		return nil, fmt.Errorf("decode converted svg: %w", err)
 	}
+
+	if renderSize < targetSize {
+		canvas := image.NewRGBA(image.Rect(0, 0, targetSize, targetSize))
+		offX := (targetSize - renderSize) / 2
+		offY := (targetSize - renderSize) / 2
+		draw.Draw(canvas, image.Rect(offX, offY, offX+renderSize, offY+renderSize), img, image.Point{}, draw.Over)
+		img = canvas
+	}
+
 	return img, nil
 }
 

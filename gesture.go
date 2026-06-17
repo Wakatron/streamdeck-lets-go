@@ -7,7 +7,7 @@ import (
 	"streamdeck-lets-go/internal/config"
 )
 
-type ActionCallback func(a *config.Action)
+type ActionCallback func(idx int, a *config.Action)
 
 type gestureKeyState struct {
 	mu         sync.Mutex
@@ -122,9 +122,9 @@ func (ge *GestureEngine) handleKeyPress(state *gestureKeyState, evt Event, actio
 		state.mu.Unlock()
 
 		if a := findAction(actions, "hold_start"); a != nil {
-			ge.onAction(a)
+			ge.onAction(evt.Index, a)
 		} else if a := findAction(actions, "long_press"); a != nil {
-			ge.onAction(a)
+			ge.onAction(evt.Index, a)
 		}
 	})
 	state.mu.Unlock()
@@ -138,7 +138,7 @@ func (ge *GestureEngine) handleKeyRelease(state *gestureKeyState, evt Event, act
 		state.holdActive = false
 		state.mu.Unlock()
 		if a := findAction(actions, "hold_end"); a != nil {
-			ge.onAction(a)
+			ge.onAction(evt.Index, a)
 		}
 		return
 	}
@@ -147,7 +147,7 @@ func (ge *GestureEngine) handleKeyRelease(state *gestureKeyState, evt Event, act
 		state.lastTapAt = time.Time{}
 		state.mu.Unlock()
 		if a := findAction(actions, "double_tap"); a != nil {
-			ge.onAction(a)
+			ge.onAction(evt.Index, a)
 		}
 		return
 	}
@@ -162,7 +162,7 @@ func (ge *GestureEngine) handleKeyRelease(state *gestureKeyState, evt Event, act
 			state.pendingTap = nil
 			state.mu.Unlock()
 			if a := findAction(actions, "tap"); a != nil {
-				ge.onAction(a)
+				ge.onAction(evt.Index, a)
 			}
 			return
 		}

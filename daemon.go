@@ -101,7 +101,7 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 
 	ssCtrl := NewScreensaver(&cfg.Screensaver)
 
-	ge := NewGestureEngine(cfg.Timing.LongPressMs, cfg.Timing.DoubleTapMs, func(a *config.Action) {
+	ge := NewGestureEngine(cfg.Timing.LongPressMs, cfg.Timing.DoubleTapMs, func(idx int, a *config.Action) {
 		if a == nil {
 			return
 		}
@@ -119,6 +119,8 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 				pm.startPeriodicKeys()
 			}
 			web.BroadcastPageChange(newPage)
+		} else {
+			primaryPM.RefreshDisplayKey(idx)
 		}
 	})
 

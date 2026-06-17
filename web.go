@@ -459,6 +459,16 @@ func backupOldConfig(path string) {
 	}
 }
 
+func collectIcons(cfg *config.Config, used map[string]bool) {
+	for _, p := range cfg.Pages {
+		for _, k := range p.Keys {
+			if k.Icon != "" {
+				used[k.Icon] = true
+			}
+		}
+	}
+}
+
 func gcImages(cfg *config.Config) {
 	imgDir := filepath.Join(configDir(), "images")
 	entries, err := os.ReadDir(imgDir)
@@ -466,13 +476,24 @@ func gcImages(cfg *config.Config) {
 		return
 	}
 
-	used := make(map[string]bool, len(entries))
-	for _, p := range cfg.Pages {
-		for _, k := range p.Keys {
-			if k.Icon != "" {
-				used[k.Icon] = true
-			}
+	used := make(map[string]bool)
+	collectIcons(cfg, used)
+
+	backupDir := filepath.Join(configDir(), "backups")
+	backupEntries, _ := os.ReadDir(backupDir)
+	for _, be := range backupEntries {
+		if be.IsDir() {
+			continue
 		}
+		data, err := os.ReadFile(filepath.Join(backupDir, be.Name()))
+		if err != nil {
+			continue
+		}
+		var backupCfg config.Config
+		if err := json.Unmarshal(data, &backupCfg); err != nil {
+			continue
+		}
+		collectIcons(&backupCfg, used)
 	}
 
 	for _, e := range entries {

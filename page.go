@@ -490,6 +490,28 @@ func (pm *PageManager) renderKeyOutput(idx int, d *config.DisplayCfg, output str
 	}
 }
 
+func (pm *PageManager) RefreshDisplayKey(idx int) {
+	pm.mu.RLock()
+	page := pm.pages[pm.active]
+	pm.mu.RUnlock()
+	if page == nil {
+		return
+	}
+	for _, k := range page.Keys {
+		if k.Index == idx && k.Display != nil {
+			timeout := 30 * time.Second
+			if k.Display.Timeout != "" {
+				if t, err := time.ParseDuration(k.Display.Timeout); err == nil && t > 0 {
+					timeout = t
+				}
+			}
+			output, err := execDisplayCapture(k.Display, timeout)
+			pm.renderKeyOutput(idx, k.Display, output, err)
+			return
+		}
+	}
+}
+
 var (
 	unicodeFontOnce sync.Once
 	unicodeFontData []byte

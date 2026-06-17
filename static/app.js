@@ -15,6 +15,7 @@ document.addEventListener('alpine:init', () => {
     // ── Edit state ──
     editing: null,
     editForm: {
+      bg_color: '',
       actions: {
         tap: {},
         long_press: {},

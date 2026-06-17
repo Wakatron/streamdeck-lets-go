@@ -6,7 +6,7 @@
 <title>StreamDeck</title>
 <script src="/static/app.js"></script>
 <script defer src="/static/alpine.min.js"></script>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
+<link rel="stylesheet" href="/static/fontawesome/css/all.min.css">
 <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
@@ -505,8 +505,8 @@
         <div class="form-group">
           <label>Background</label>
           <div style="display:flex;gap:8px;align-items:center;">
-            <input type="color" :value="editForm.bg_color || '#000000'"
-                   @input="editForm.bg_color = $event.target.value"
+            <input type="color"
+                   x-init="$el.value = editForm.bg_color || '#000000'; $el.addEventListener('input', () => editForm.bg_color = $el.value); $watch('editForm.bg_color', v => $el.value = v || '#000000')"
                    style="width:40px;height:40px;padding:2px;border-radius:var(--radius-xs);cursor:pointer;">
             <input type="text" x-model="editForm.bg_color"
                    placeholder="#rrggbb or #rrggbbaa" maxlength="9"

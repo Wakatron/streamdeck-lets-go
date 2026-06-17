@@ -115,11 +115,14 @@ func renderFAGlyph(style faStyle, name string, size int, scale float64) (image.I
 
 	rgba := image.NewRGBA(image.Rect(0, 0, size, size))
 
-	offX := (size - int(fontSize)) / 2
+	adv := font.MeasureString(face, string(cp)).Ceil()
+	offX := (size - adv) / 2
 	if offX < 0 {
-		offX = size / 8
+		offX = 0
 	}
-	baselineY := size * 7 / 10
+
+	metrics := face.Metrics()
+	baselineY := (size + metrics.Ascent.Ceil() - metrics.Descent.Ceil()) / 2
 
 	d := font.Drawer{
 		Dst:  rgba,

@@ -153,12 +153,12 @@ func svgToPNG(svgPath string, targetSize int, scale float64) (image.Image, error
 		scale = 0.55
 	}
 
-	renderSize := targetSize
-	if scale < 1 {
-		renderSize = int(float64(targetSize) * scale)
-		if renderSize < 1 {
-			renderSize = 1
-		}
+	renderSize := int(float64(targetSize) * scale)
+	if renderSize > targetSize {
+		renderSize = targetSize
+	}
+	if renderSize < 1 {
+		renderSize = 1
 	}
 
 	cmd := exec.Command("rsvg-convert",

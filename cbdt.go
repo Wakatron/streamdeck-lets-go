@@ -175,8 +175,11 @@ func renderCBDTGlyph(r rune, targetSize int, scale float64) (image.Image, bool) 
 	raw := emojiCBDT.imgs[idx]
 
 	displaySize := int(float64(targetSize) * scale)
-	if displaySize < 1 {
+	if displaySize > targetSize {
 		displaySize = targetSize
+	}
+	if displaySize < 1 {
+		displaySize = 1
 	}
 
 	scaled := raw

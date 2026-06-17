@@ -59,15 +59,8 @@
           :style="key.displayBg ? { backgroundColor: key.displayBg } : {}"
           :class="{ empty: !key.configured }"
           @click="editKey(key.index)">
-          <img x-show="key.configured && (key.background || key.displayBg)"
+          <img x-show="key.configured && (key.icon || key.label || key.displayText || key.displayBg || key.background)"
              :src="key.previewUrl" alt="">
-          <i x-show="key.configured && !key.background && !key.displayBg && isFAIcon(key.icon)"
-             :class="faClass(key.icon)" class="fa-preview"></i>
-          <img x-show="key.configured && !key.background && !key.displayBg && !isFAIcon(key.icon) && key.icon"
-             :src="key.previewUrl" alt="">
-          <span x-show="key.configured && !key.background && !key.displayBg && !key.icon && (key.label || key.displayText)"
-            style="font-size:12px;color:#fff;opacity:0.75;text-align:center;line-height:1.2;padding:4px;"
-            x-text="key.displayText || key.label"></span>
           <span x-show="!key.configured" style="color:var(--text-muted);font-size:24px;opacity:0.5;line-height:1;">+</span>
           <div class="action-icons" x-show="key.hasAction">
             <template x-for="(t, ti) in key.actionTypes.slice(0,3)" :key="ti">

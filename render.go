@@ -42,7 +42,11 @@ func RenderKeyToImage(k *config.KeyConfig, keySize int) image.Image {
 			}
 		}
 		if k.Label != "" {
-			return composeImageWithLabel(img, k.Label, keySize)
+			fontSize := 10.0
+			if k.FontSize != nil {
+				fontSize = *k.FontSize
+			}
+			return composeImageWithLabel(img, k.Label, keySize, fontSize)
 		}
 		g := gift.New(gift.Resize(keySize, keySize, gift.LanczosResampling))
 		rgba := image.NewRGBA(image.Rect(0, 0, keySize, keySize))
@@ -62,7 +66,11 @@ func RenderKeyToImage(k *config.KeyConfig, keySize int) image.Image {
 			return blankImage(keySize, bg)
 		}
 	}
-	return renderTextImage(k.Label, keySize)
+	fontSize := 12.0
+	if k.FontSize != nil {
+		fontSize = *k.FontSize
+	}
+	return renderTextImage(k.Label, keySize, fontSize)
 }
 
 func blankImage(size int, c color.Color) image.Image {
@@ -71,7 +79,7 @@ func blankImage(size int, c color.Color) image.Image {
 	return img
 }
 
-func composeImageWithLabel(src image.Image, text string, keySize int) image.Image {
+func composeImageWithLabel(src image.Image, text string, keySize int, fontSize float64) image.Image {
 	g := gift.New(gift.Resize(keySize, keySize, gift.LanczosResampling))
 	rgba := image.NewRGBA(image.Rect(0, 0, keySize, keySize))
 	g.Draw(rgba, src)
@@ -84,7 +92,12 @@ func composeImageWithLabel(src image.Image, text string, keySize int) image.Imag
 	draw.Draw(rgba, barRect, &image.Uniform{color.RGBA{0, 0, 0, 180}}, image.Point{}, draw.Over)
 
 	if text != "" {
-		face := basicfont.Face7x13
+		face, err := parseDisplayFace(fontSize)
+		if err != nil {
+			face = basicfont.Face7x13
+		} else {
+			defer face.Close()
+		}
 		textW := font.MeasureString(face, text).Ceil()
 		posX := (keySize - textW) / 2
 		if posX < 2 {
@@ -107,11 +120,16 @@ func composeImageWithLabel(src image.Image, text string, keySize int) image.Imag
 	return rgba
 }
 
-func renderTextImage(text string, keySize int) image.Image {
+func renderTextImage(text string, keySize int, fontSize float64) image.Image {
 	rgba := blankImage(keySize, color.RGBA{0, 0, 0, 255}).(*image.RGBA)
 
 	if text != "" {
-		face := basicfont.Face7x13
+		face, err := parseDisplayFace(fontSize)
+		if err != nil {
+			face = basicfont.Face7x13
+		} else {
+			defer face.Close()
+		}
 		textW := font.MeasureString(face, text).Ceil()
 		posX := (keySize - textW) / 2
 		if posX < 2 {

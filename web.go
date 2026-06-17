@@ -37,12 +37,20 @@ type WebServer struct {
 	cfg        *config.Config
 	configPath string
 	pm         *PageManager
+	extraPMs   []*PageManager
 	decks      []*Deck
 	mu         sync.RWMutex
+
+	sseClients map[chan string]struct{}
+	sseMu      sync.RWMutex
 }
 
 func NewWebServer(cfg *config.Config, configPath string) *WebServer {
-	return &WebServer{cfg: cfg, configPath: configPath}
+	return &WebServer{
+		cfg:        cfg,
+		configPath: configPath,
+		sseClients: make(map[chan string]struct{}),
+	}
 }
 
 func (s *WebServer) UpdateConfig(cfg *config.Config) {
@@ -61,6 +69,23 @@ func (s *WebServer) SetDecks(decks []*Deck) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.decks = decks
+}
+
+func (s *WebServer) SetExtraPageManagers(pms []*PageManager) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.extraPMs = pms
+}
+
+func (s *WebServer) BroadcastPageChange(page string) {
+	s.sseMu.RLock()
+	defer s.sseMu.RUnlock()
+	for ch := range s.sseClients {
+		select {
+		case ch <- page:
+		default:
+		}
+	}
 }
 
 func (s *WebServer) Serve(ctx context.Context, addr string) error {
@@ -85,6 +110,9 @@ func (s *WebServer) Serve(ctx context.Context, addr string) error {
 	mux.HandleFunc("GET /api/decks", s.handleGetDecks)
 
 	mux.HandleFunc("GET /api/status", s.handleGetStatus)
+
+	mux.HandleFunc("GET /api/events", s.handleSSE)
+	mux.HandleFunc("POST /api/activate-page", s.handleActivatePage)
 
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticRoot))))
 
@@ -125,6 +153,80 @@ func (s *WebServer) handleSPA(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Write(data)
+}
+
+func (s *WebServer) handleSSE(w http.ResponseWriter, r *http.Request) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming not supported", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	ch := make(chan string, 8)
+
+	s.sseMu.Lock()
+	s.sseClients[ch] = struct{}{}
+	s.sseMu.Unlock()
+
+	notify := r.Context().Done()
+	go func() {
+		<-notify
+		s.sseMu.Lock()
+		delete(s.sseClients, ch)
+		s.sseMu.Unlock()
+	}()
+
+	flusher.Flush()
+
+	for {
+		select {
+		case <-notify:
+			return
+		case page := <-ch:
+			data, _ := json.Marshal(map[string]string{"page": page})
+			fmt.Fprintf(w, "event: page_changed\ndata: %s\n\n", data)
+			flusher.Flush()
+		}
+	}
+}
+
+func (s *WebServer) handleActivatePage(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Page string `json:"page"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("invalid JSON: %v", err), http.StatusBadRequest)
+		return
+	}
+	if req.Page == "" {
+		http.Error(w, "page is required", http.StatusBadRequest)
+		return
+	}
+
+	s.mu.RLock()
+	allPMs := append([]*PageManager{s.pm}, s.extraPMs...)
+	s.mu.RUnlock()
+
+	for _, pm := range allPMs {
+		if pm == nil {
+			continue
+		}
+		if err := pm.ActivatePage(req.Page); err != nil {
+			slog.Warn("activate page", "page", req.Page, "error", err)
+		} else {
+			pm.stopPeriodicKeys()
+			pm.startPeriodicKeys()
+		}
+	}
+
+	s.BroadcastPageChange(req.Page)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok", "page": req.Page})
 }
 
 func (s *WebServer) handleGetConfig(w http.ResponseWriter, r *http.Request) {

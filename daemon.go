@@ -74,6 +74,7 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 
 	web.SetDecks(decks)
 	web.SetPageManager(primaryPM)
+	web.SetExtraPageManagers(pageMgrs[1:])
 
 	for _, pm := range pageMgrs {
 		if err := pm.ActivatePage(cfg.DefaultPage); err != nil {
@@ -104,14 +105,19 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 		if a == nil {
 			return
 		}
+		oldPage := primaryPM.ActivePageName()
 		if err := ExecuteAction(a, primaryDeck, primaryPM); err != nil {
 			slog.Error("execute action", "error", err)
 		}
-		if a.Type == "page" {
-			asm.NotifyManualPage(a.Page)
-			for _, pm := range pageMgrs[1:] {
-				pm.ActivatePage(a.Page)
+		newPage := primaryPM.ActivePageName()
+		if newPage != oldPage {
+			if a.Type == "page" {
+				asm.NotifyManualPage(a.Page)
 			}
+			for _, pm := range pageMgrs[1:] {
+				pm.ActivatePage(newPage)
+			}
+			web.BroadcastPageChange(newPage)
 		}
 	})
 
@@ -191,6 +197,7 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 					}
 					pm.startPeriodicKeys()
 				}
+				web.BroadcastPageChange(page)
 			}
 
 		case <-configTicker.C:
@@ -214,7 +221,9 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 				for _, d := range decks {
 					d.SetBrightness(deviceBrightness(cfg, d.Serial()))
 				}
+			var activePages []string
 			for _, pm := range pageMgrs {
+				activePages = append(activePages, pm.ActivePageName())
 				pm.stopPeriodicKeys()
 				pm.defaultFont = cfg.Font
 				pm.LoadPages(cfg.Pages)
@@ -225,9 +234,18 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 					detector = NewWindowDetector()
 					windowCh, _ = detector.Start(ctx)
 				}
-				for _, pm := range pageMgrs {
-					if err := pm.ActivatePage(cfg.DefaultPage); err != nil {
-						slog.Warn("reload: activate default page", "error", err)
+				for i, pm := range pageMgrs {
+					page := cfg.DefaultPage
+					if i < len(activePages) && activePages[i] != "" {
+						for _, p := range cfg.Pages {
+							if p.Name == activePages[i] {
+								page = activePages[i]
+								break
+							}
+						}
+					}
+					if err := pm.ActivatePage(page); err != nil {
+						slog.Warn("reload: activate page", "error", err)
 					}
 					pm.startPeriodicKeys()
 				}

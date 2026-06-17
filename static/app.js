@@ -51,6 +51,28 @@ document.addEventListener('alpine:init', () => {
       await this.loadConfig()
       await this.loadDecks()
       setInterval(() => this.pollDisplayOutputs(), 3000)
+      this.connectSSE()
+    },
+
+    connectSSE() {
+      if (this._sse) this._sse.close()
+      const es = new EventSource('/api/events')
+      this._sse = es
+      es.addEventListener('page_changed', (e) => {
+        try {
+          const data = JSON.parse(e.data)
+          if (data.page && this.pages.find(p => p.name === data.page)) {
+            this.activePage = data.page
+            localStorage.setItem('sd_active_page', data.page)
+            this.displayOutputs = {}
+          }
+        } catch (_) {}
+      })
+      es.onerror = () => {
+        es.close()
+        this._sse = null
+        setTimeout(() => this.connectSSE(), 3000)
+      }
     },
 
     async loadDecks() {
@@ -79,7 +101,12 @@ document.addEventListener('alpine:init', () => {
         this.config = await res.json()
         this.pages = this.config.pages
         if (this.pages.length > 0) {
-          this.activePage = this.config.default_page || this.pages[0].name
+          const saved = localStorage.getItem('sd_active_page')
+          if (saved && this.pages.find(p => p.name === saved)) {
+            this.activePage = saved
+          } else {
+            this.activePage = this.config.default_page || this.pages[0].name
+          }
         }
         this.syncSettings()
       } catch (e) {
@@ -460,7 +487,13 @@ document.addEventListener('alpine:init', () => {
     // ── Page management ──
     switchPage(name) {
       this.activePage = name
+      localStorage.setItem('sd_active_page', name)
       this.displayOutputs = {}
+      fetch('/api/activate-page', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ page: name })
+      }).catch(() => {})
     },
 
     async addPage() {

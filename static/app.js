@@ -116,7 +116,7 @@ document.addEventListener('alpine:init', () => {
 
     syncSettings() {
       this.settingsForm = {
-        brightness: this.config.devices?.[0]?.brightness || 75,
+        brightness: this.getDeviceConfig(this.activeDeckSerial)?.brightness ?? 75,
         font: this.config.font || 'medium',
         screensaver_enabled: this.config.screensaver?.enabled || false,
         screensaver_idle: this.config.screensaver?.idle_seconds || 30,
@@ -139,6 +139,10 @@ document.addEventListener('alpine:init', () => {
     get activeDeck() {
       return this.decks.find(d => d.serial === this.activeDeckSerial)
         || { keys_x: 5, keys_y: 3, num_keys: 15 }
+    },
+
+    getDeviceConfig(serial) {
+      return this.config.devices?.find(d => d.serial === serial)
     },
 
     // ── Grid ──
@@ -183,7 +187,8 @@ document.addEventListener('alpine:init', () => {
       if (label) url += `&label=${encodeURIComponent(label)}`
       if (k.icon_scale != null) url += `&icon_scale=${k.icon_scale}`
       if (k.font_size != null) url += `&font_size=${k.font_size}`
-      if (k.background) url += `&background=${encodeURIComponent(k.background)}`
+      const bg = dout?.background || k.background
+      if (bg) url += `&background=${encodeURIComponent(bg)}`
       return url
     },
 
@@ -584,10 +589,13 @@ document.addEventListener('alpine:init', () => {
 
     // ── Settings ──
     async saveSettings() {
-      if (!this.config.devices || this.config.devices.length === 0) {
-        this.config.devices = [{ serial: '', brightness: 75 }]
+      if (!this.config.devices) this.config.devices = []
+      let dev = this.config.devices.find(d => d.serial === this.activeDeckSerial)
+      if (!dev) {
+        dev = { serial: this.activeDeckSerial, brightness: 75 }
+        this.config.devices.push(dev)
       }
-      this.config.devices[0].brightness = parseInt(this.settingsForm.brightness)
+      dev.brightness = parseInt(this.settingsForm.brightness)
       this.config.font = this.settingsForm.font || 'medium'
       this.config.screensaver = {
         enabled: this.settingsForm.screensaver_enabled,

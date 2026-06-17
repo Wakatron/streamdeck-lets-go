@@ -114,8 +114,9 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 			if a.Type == "page" {
 				asm.NotifyManualPage(a.Page)
 			}
-			for _, pm := range pageMgrs[1:] {
-				pm.ActivatePage(newPage)
+			for _, pm := range pageMgrs {
+				pm.stopPeriodicKeys()
+				pm.startPeriodicKeys()
 			}
 			web.BroadcastPageChange(newPage)
 		}
@@ -195,6 +196,7 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 					if err := pm.ActivatePage(page); err != nil {
 						slog.Warn("auto-switch: activate page", "error", err)
 					}
+					pm.stopPeriodicKeys()
 					pm.startPeriodicKeys()
 				}
 				web.BroadcastPageChange(page)

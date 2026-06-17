@@ -249,6 +249,13 @@ func (pm *PageManager) renderKey(idx int, k *config.KeyConfig) {
 		if err := pm.deck.WriteText(idx, k.Label, image.Black, fontName, fontSize); err != nil {
 			slog.Warn("write text", "error", err)
 		}
+	} else if k.Background != "" {
+		bg, err := parseHexColor(k.Background)
+		if err == nil {
+			pm.deck.FillColor(idx, bg.R, bg.G, bg.B)
+		} else {
+			slog.Warn("invalid background color", "value", k.Background, "error", err)
+		}
 	}
 }
 

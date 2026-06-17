@@ -13,7 +13,7 @@ import (
 	"streamdeck-lets-go/internal/config"
 )
 
-func RenderKeyToImage(k *config.KeyConfig, keySize int) image.Image {
+func RenderKeyToImage(k *config.KeyConfig, keySize int, showLabelBackground bool) image.Image {
 	if k == nil {
 		return blankImage(keySize, color.RGBA{0, 0, 0, 255})
 	}
@@ -46,7 +46,7 @@ func RenderKeyToImage(k *config.KeyConfig, keySize int) image.Image {
 			if k.FontSize != nil {
 				fontSize = *k.FontSize
 			}
-			return composeImageWithLabel(img, k.Label, keySize, fontSize)
+			return composeImageWithLabel(img, k.Label, keySize, fontSize, showLabelBackground)
 		}
 		g := gift.New(gift.Resize(keySize, keySize, gift.LanczosResampling))
 		rgba := image.NewRGBA(image.Rect(0, 0, keySize, keySize))
@@ -79,7 +79,7 @@ func blankImage(size int, c color.Color) image.Image {
 	return img
 }
 
-func composeImageWithLabel(src image.Image, text string, keySize int, fontSize float64) image.Image {
+func composeImageWithLabel(src image.Image, text string, keySize int, fontSize float64, showLabelBackground bool) image.Image {
 	g := gift.New(gift.Resize(keySize, keySize, gift.LanczosResampling))
 	rgba := image.NewRGBA(image.Rect(0, 0, keySize, keySize))
 	g.Draw(rgba, src)
@@ -89,7 +89,9 @@ func composeImageWithLabel(src image.Image, text string, keySize int, fontSize f
 		barHeight = 18
 	}
 	barRect := image.Rect(0, keySize-barHeight, keySize, keySize)
-	draw.Draw(rgba, barRect, &image.Uniform{color.RGBA{0, 0, 0, 180}}, image.Point{}, draw.Over)
+	if showLabelBackground {
+		draw.Draw(rgba, barRect, &image.Uniform{color.RGBA{0, 0, 0, 180}}, image.Point{}, draw.Over)
+	}
 
 	if text != "" {
 		face, err := parseDisplayFace(fontSize)

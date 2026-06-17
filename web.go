@@ -404,7 +404,7 @@ func (s *WebServer) handleRender(w http.ResponseWriter, r *http.Request) {
 		kc.Background = bg
 	}
 
-	img := RenderKeyToImage(kc, keySize)
+	img := RenderKeyToImage(kc, keySize, s.cfg.ShowLabelBackground)
 
 	w.Header().Set("Content-Type", "image/png")
 	w.Header().Set("Cache-Control", "no-cache")

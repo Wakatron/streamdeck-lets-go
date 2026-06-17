@@ -3,6 +3,7 @@
   "log_level": "info",
   "default_page": "main",
   "font": "medium",
+  "show_label_background": true,
   "devices": [
     {
       "serial": "",

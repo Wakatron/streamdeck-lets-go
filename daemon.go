@@ -57,6 +57,7 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 	for i, d := range decks {
 		pageMgrs[i] = NewPageManager(d)
 		pageMgrs[i].defaultFont = cfg.Font
+		pageMgrs[i].showLabelBackground = cfg.ShowLabelBackground
 		pageMgrs[i].LoadPages(cfg.Pages)
 	}
 	primaryPM := pageMgrs[0]
@@ -230,6 +231,7 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 				activePages = append(activePages, pm.ActivePageName())
 				pm.stopPeriodicKeys()
 				pm.defaultFont = cfg.Font
+				pm.showLabelBackground = cfg.ShowLabelBackground
 				pm.LoadPages(cfg.Pages)
 			}
 				ge.ReloadTiming(cfg.Timing.LongPressMs, cfg.Timing.DoubleTapMs)
@@ -315,6 +317,7 @@ func reconnectDeck(ctx context.Context, cfg *config.Config, pm **PageManager, as
 		if err == nil {
 			*pm = NewPageManager(newDeck)
 			(*pm).defaultFont = cfg.Font
+			(*pm).showLabelBackground = cfg.ShowLabelBackground
 			(*pm).LoadPages(cfg.Pages)
 			(*pm).ActivatePage(cfg.DefaultPage)
 			(*pm).startPeriodicKeys()

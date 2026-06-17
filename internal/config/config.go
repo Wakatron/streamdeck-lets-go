@@ -11,15 +11,16 @@ import (
 )
 
 type Config struct {
-	Version     int            `json:"version"`
-	LogLevel    string         `json:"log_level"`
-	DefaultPage string         `json:"default_page"`
-	Font        string         `json:"font,omitempty"`
-	Devices     []DeviceConfig `json:"devices"`
-	Pages       []PageConfig   `json:"pages"`
-	AutoSwitch  []SwitchRule   `json:"auto_switch"`
-	Screensaver ScreensaverCfg `json:"screensaver"`
-	Timing      TimingConfig   `json:"timing,omitempty"`
+	Version              int            `json:"version"`
+	LogLevel             string         `json:"log_level"`
+	DefaultPage          string         `json:"default_page"`
+	Font                 string         `json:"font,omitempty"`
+	ShowLabelBackground  bool           `json:"show_label_background"`
+	Devices              []DeviceConfig `json:"devices"`
+	Pages                []PageConfig   `json:"pages"`
+	AutoSwitch           []SwitchRule   `json:"auto_switch"`
+	Screensaver          ScreensaverCfg `json:"screensaver"`
+	Timing               TimingConfig   `json:"timing,omitempty"`
 }
 
 type TimingConfig struct {
@@ -113,9 +114,10 @@ type ScreensaverCfg struct {
 
 func DefaultConfig() *Config {
 	return &Config{
-		Version:     1,
-		LogLevel:    "info",
-		DefaultPage: "default",
+		Version:             1,
+		LogLevel:            "info",
+		DefaultPage:         "default",
+		ShowLabelBackground: true,
 		Pages: []PageConfig{
 			{
 				Name: "default",

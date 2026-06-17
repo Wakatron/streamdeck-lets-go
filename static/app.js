@@ -119,6 +119,7 @@ document.addEventListener('alpine:init', () => {
       this.settingsForm = {
         brightness: this.getDeviceConfig(this.activeDeckSerial)?.brightness ?? 75,
         font: this.config.font || 'medium',
+        show_label_background: this.config.show_label_background ?? true,
         screensaver_enabled: this.config.screensaver?.enabled || false,
         screensaver_idle: this.config.screensaver?.idle_seconds || 30,
         screensaver_brightness: this.config.screensaver?.brightness || 10,
@@ -598,6 +599,7 @@ document.addEventListener('alpine:init', () => {
       }
       dev.brightness = parseInt(this.settingsForm.brightness)
       this.config.font = this.settingsForm.font || 'medium'
+      this.config.show_label_background = this.settingsForm.show_label_background
       this.config.screensaver = {
         enabled: this.settingsForm.screensaver_enabled,
         idle_seconds: parseInt(this.settingsForm.screensaver_idle) || 30,

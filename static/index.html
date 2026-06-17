@@ -505,7 +505,8 @@
         <div class="form-group">
           <label>Background</label>
           <div style="display:flex;gap:8px;align-items:center;">
-            <input type="color" x-model="editForm.bg_color"
+            <input type="color" :value="editForm.bg_color || '#000000'"
+                   @input="editForm.bg_color = $event.target.value"
                    style="width:40px;height:40px;padding:2px;border-radius:var(--radius-xs);cursor:pointer;">
             <input type="text" x-model="editForm.bg_color"
                    placeholder="#rrggbb or #rrggbbaa" maxlength="9"

@@ -415,7 +415,7 @@ func (pm *PageManager) renderKeyOutput(idx int, d *config.DisplayCfg, output str
 	}
 
 	if do.Text == "" && bgOverride == nil {
-		return
+		do = &DisplayOutput{}
 	}
 
 	pm.displayMu.Lock()
@@ -786,8 +786,13 @@ func parseEmojiRef(path string) (rune, error) {
 	return r, nil
 }
 
+func cacheKey(path string, targetSize int, faScale float64) string {
+	return fmt.Sprintf("%s|%d|%.6f", path, targetSize, faScale)
+}
+
 func loadImage(path string, targetSize int, faScale float64) (image.Image, error) {
-	if cached, ok := imageCache.Load(path); ok {
+	key := cacheKey(path, targetSize, faScale)
+	if cached, ok := imageCache.Load(key); ok {
 		return cached.(image.Image), nil
 	}
 
@@ -800,7 +805,7 @@ func loadImage(path string, targetSize int, faScale float64) (image.Image, error
 		if err != nil {
 			return nil, err
 		}
-		imageCache.Store(path, img)
+		imageCache.Store(key, img)
 		return img, nil
 	}
 
@@ -810,7 +815,7 @@ func loadImage(path string, targetSize int, faScale float64) (image.Image, error
 			return nil, err
 		}
 		img := renderEmojiGlyph(r, targetSize, faScale)
-		imageCache.Store(path, img)
+		imageCache.Store(key, img)
 		return img, nil
 	}
 
@@ -830,7 +835,7 @@ func loadImage(path string, targetSize int, faScale float64) (image.Image, error
 		if err != nil {
 			return nil, err
 		}
-		imageCache.Store(path, img)
+		imageCache.Store(key, img)
 		return img, nil
 	}
 
@@ -845,7 +850,7 @@ func loadImage(path string, targetSize int, faScale float64) (image.Image, error
 		return nil, fmt.Errorf("decode: %w", err)
 	}
 
-	imageCache.Store(path, img)
+	imageCache.Store(key, img)
 	return img, nil
 }
 

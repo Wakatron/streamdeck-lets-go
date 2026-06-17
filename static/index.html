@@ -342,8 +342,7 @@
               </div>
             </template>
 
-            <template x-if="editForm.actions[t].type === 'page'">
-              <div class="form-group">
+            <div class="form-group" x-show="editForm.actions[t].type === 'page'">
                 <select x-model="editForm.actions[t].page">
                   <option value="">-- select --</option>
                   <template x-for="p in pages" :key="p.name">
@@ -351,7 +350,6 @@
                   </template>
                 </select>
               </div>
-            </template>
 
             <template x-if="editForm.actions[t].type === 'keyboard'">
               <div class="form-group">
@@ -441,8 +439,7 @@
                 </div>
               </template>
 
-              <template x-if="editForm.actions.hold[phase].type === 'page'">
-                <div class="form-group">
+              <div class="form-group" x-show="editForm.actions.hold[phase].type === 'page'">
                   <select x-model="editForm.actions.hold[phase].page">
                     <option value="">-- select --</option>
                     <template x-for="p in pages" :key="p.name">
@@ -450,7 +447,6 @@
                     </template>
                   </select>
                 </div>
-              </template>
 
               <template x-if="editForm.actions.hold[phase].type === 'keyboard'">
                 <div class="form-group">

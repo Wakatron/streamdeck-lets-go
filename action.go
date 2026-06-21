@@ -3,10 +3,12 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -97,6 +99,52 @@ func execDisplayCapture(d *config.DisplayCfg, timeout time.Duration) (string, er
 		output += stderr.String()
 	}
 	return output, err
+}
+
+func execDynamicKeys(dg *config.DynamicKeyGen, timeout time.Duration, keyCount int) ([]config.KeyConfig, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	var cmd *exec.Cmd
+	if dg.Command != "" {
+		cmd = exec.CommandContext(ctx, "sh", "-c", dg.Command)
+	} else {
+		script := dg.Script
+		if !filepath.IsAbs(script) {
+			script = filepath.Join(configDir(), script)
+		}
+		cmd = exec.CommandContext(ctx, script)
+	}
+
+	// Set environment variables for the script
+	cmd.Env = append(os.Environ(),
+		fmt.Sprintf("STREAMDECK_KEY_COUNT=%d", keyCount),
+		fmt.Sprintf("STREAMDECK_CONFIG_DIR=%s", configDir()),
+	)
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+
+	// Log stderr separately (don't merge into stdout for JSON parsing)
+	if stderr.Len() > 0 {
+		slog.Debug("dynamic_keys script stderr", "output", stderr.String())
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("execute dynamic_keys: %w", err)
+	}
+
+	// Parse JSON from stdout
+	var keys []config.KeyConfig
+	output := stdout.String()
+	if err := json.Unmarshal([]byte(output), &keys); err != nil {
+		return nil, fmt.Errorf("parse dynamic_keys JSON: %w", err)
+	}
+
+	return keys, nil
 }
 
 func execBuiltin(a *config.Action, deck *Deck, pm *PageManager) error {

@@ -50,6 +50,10 @@ type PageManager struct {
 	displayMu           sync.RWMutex
 	defaultFont         string
 	showLabelBackground bool
+	dynamicCancel       context.CancelFunc
+	dynamicKeys         []config.KeyConfig
+	dynamicKeysMu       sync.RWMutex
+	dynamicResults      map[string][]config.KeyConfig
 }
 
 func NewPageManager(deck *Deck) *PageManager {
@@ -59,19 +63,88 @@ func NewPageManager(deck *Deck) *PageManager {
 		keyStates:      make(map[int]*keyState),
 		displayOutputs: make(map[int]*DisplayOutput),
 		defaultFont:    "medium",
+		dynamicResults: make(map[string][]config.KeyConfig),
 	}
+}
+
+func (pm *PageManager) activeKeys() []config.KeyConfig {
+	pm.mu.RLock()
+	page := pm.pages[pm.active]
+	pm.mu.RUnlock()
+	if page == nil {
+		return nil
+	}
+
+	pm.dynamicKeysMu.RLock()
+	dyn := pm.dynamicKeys
+	pm.dynamicKeysMu.RUnlock()
+
+	if dyn == nil {
+		return page.Keys
+	}
+
+	used := make(map[int]bool, len(page.Keys))
+	result := make([]config.KeyConfig, 0, len(page.Keys)+len(dyn))
+	for _, k := range page.Keys {
+		used[k.Index] = true
+		result = append(result, k)
+	}
+	for _, k := range dyn {
+		if !used[k.Index] {
+			result = append(result, k)
+		}
+	}
+	return result
+}
+
+// GetEffectiveKeys returns merged (static + cached dynamic) keys for a page.
+// Used by the web UI to preview generated keys.
+func (pm *PageManager) GetEffectiveKeys(name string) []config.KeyConfig {
+	pm.mu.RLock()
+	page := pm.pages[name]
+	pm.mu.RUnlock()
+	if page == nil {
+		return nil
+	}
+
+	pm.dynamicKeysMu.RLock()
+	cached := pm.dynamicResults[name]
+	pm.dynamicKeysMu.RUnlock()
+
+	if cached == nil {
+		return page.Keys
+	}
+
+	used := make(map[int]bool, len(page.Keys))
+	result := make([]config.KeyConfig, 0, len(page.Keys)+len(cached))
+	for _, k := range page.Keys {
+		used[k.Index] = true
+		result = append(result, k)
+	}
+	for _, k := range cached {
+		if !used[k.Index] {
+			result = append(result, k)
+		}
+	}
+	return result
 }
 
 func (pm *PageManager) LoadPages(pages []config.PageConfig) {
 	pm.mu.Lock()
-	defer pm.mu.Unlock()
 	pm.pages = make(map[string]*config.PageConfig, len(pages))
 	for i := range pages {
 		pm.pages[pages[i].Name] = &pages[i]
 	}
+	pm.mu.Unlock()
+
+	pm.dynamicKeysMu.Lock()
+	pm.dynamicResults = make(map[string][]config.KeyConfig)
+	pm.dynamicKeysMu.Unlock()
 }
 
 func (pm *PageManager) ActivatePage(name string) error {
+	pm.stopDynamicKeys()
+
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 
@@ -117,6 +190,12 @@ func (pm *PageManager) ActivatePage(name string) error {
 		pm.renderKey(i, &k)
 	}
 
+	if page.DynamicKeys != nil {
+		go func() {
+			pm.startDynamicKeys(page.DynamicKeys)
+		}()
+	}
+
 	return nil
 }
 
@@ -149,13 +228,7 @@ func (pm *PageManager) GetPage(name string) *config.PageConfig {
 }
 
 func (pm *PageManager) RenderKey(keyIndex int) {
-	pm.mu.RLock()
-	defer pm.mu.RUnlock()
-	page := pm.pages[pm.active]
-	if page == nil {
-		return
-	}
-	for _, k := range page.Keys {
+	for _, k := range pm.activeKeys() {
 		if k.Index == keyIndex {
 			pm.renderKey(keyIndex, &k)
 			return
@@ -164,13 +237,7 @@ func (pm *PageManager) RenderKey(keyIndex int) {
 }
 
 func (pm *PageManager) ReRenderDisplayKey(keyIndex int, output string) {
-	pm.mu.RLock()
-	page := pm.pages[pm.active]
-	pm.mu.RUnlock()
-	if page == nil {
-		return
-	}
-	for _, k := range page.Keys {
+	for _, k := range pm.activeKeys() {
 		if k.Index == keyIndex && k.Display != nil {
 			pm.renderKeyOutput(keyIndex, k.Display, output, nil)
 			return
@@ -260,6 +327,8 @@ func (pm *PageManager) renderKey(idx int, k *config.KeyConfig) {
 }
 
 func (pm *PageManager) stopPeriodicKeys() {
+	pm.stopDynamicKeys()
+
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 	for _, ks := range pm.keyStates {
@@ -296,10 +365,135 @@ func (pm *PageManager) startPeriodicKeys() {
 			keys = append(keys, displayKey{index: k.Index, display: k.Display, ctx: ctx})
 		}
 	}
+	dg := page.DynamicKeys
 	pm.mu.Unlock()
 
 	for _, dk := range keys {
 		go pm.runDisplayKey(dk.index, dk.display, dk.ctx)
+	}
+
+	if dg != nil {
+		pm.startDynamicKeys(dg)
+	}
+}
+
+func (pm *PageManager) stopDynamicKeys() {
+	pm.dynamicKeysMu.Lock()
+	if pm.dynamicCancel != nil {
+		pm.dynamicCancel()
+		pm.dynamicCancel = nil
+	}
+	pm.dynamicKeys = nil
+	pm.dynamicKeysMu.Unlock()
+}
+
+func (pm *PageManager) startDynamicKeys(dg *config.DynamicKeyGen) {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	pm.dynamicKeysMu.Lock()
+	if pm.dynamicCancel != nil {
+		pm.dynamicCancel()
+	}
+	pm.dynamicCancel = cancel
+	pm.dynamicKeysMu.Unlock()
+
+	numKeys := dg.MaxKeys
+	if numKeys <= 0 {
+		numKeys = pm.deck.NumKeys()
+	}
+
+	var interval time.Duration
+	if dg.Interval != "" {
+		interval, _ = time.ParseDuration(dg.Interval)
+	}
+	if interval == 0 {
+		interval = 60 * time.Second
+	}
+
+	go pm.runDynamicKeyGenerator(ctx, dg, numKeys, interval)
+}
+
+func (pm *PageManager) runDynamicKeyGenerator(ctx context.Context, dg *config.DynamicKeyGen, numKeys int, interval time.Duration) {
+	timeout := 15 * time.Second
+	if dg.Timeout != "" {
+		if t, err := time.ParseDuration(dg.Timeout); err == nil && t > 0 {
+			timeout = t
+		}
+	}
+
+	pm.updateDynamicKeys(dg, timeout, numKeys)
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			pm.updateDynamicKeys(dg, timeout, numKeys)
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+func (pm *PageManager) updateDynamicKeys(dg *config.DynamicKeyGen, timeout time.Duration, numKeys int) {
+	keys, err := execDynamicKeys(dg, timeout, numKeys)
+	if err != nil {
+		slog.Warn("dynamic_keys generator failed", "error", err)
+		return
+	}
+
+	if len(keys) > numKeys {
+		keys = keys[:numKeys]
+	}
+
+	pm.mu.RLock()
+	pageName := pm.active
+	pm.mu.RUnlock()
+
+	pm.dynamicKeysMu.Lock()
+	if pm.dynamicCancel == nil {
+		pm.dynamicKeysMu.Unlock()
+		return
+	}
+	pm.dynamicKeys = keys
+	pm.dynamicResults[pageName] = keys
+	pm.dynamicKeysMu.Unlock()
+
+	slog.Info("dynamic_keys updated", "count", len(keys), "page", pageName)
+
+	pm.rerenderActivePage()
+}
+
+func (pm *PageManager) rerenderActivePage() {
+	pm.mu.RLock()
+	bg := ""
+	if page := pm.pages[pm.active]; page != nil {
+		bg = page.Background
+	}
+	pm.mu.RUnlock()
+
+	if bg != "" {
+		if img, err := loadImage(bg, 0, 0); err == nil {
+			pm.deck.FillPanel(img)
+		}
+	}
+
+	keys := pm.activeKeys()
+	keyByIndex := make(map[int]config.KeyConfig, len(keys))
+	for _, k := range keys {
+		keyByIndex[k.Index] = k
+	}
+
+	for i := 0; i < pm.deck.NumKeys(); i++ {
+		k, ok := keyByIndex[i]
+		if !ok {
+			if bg == "" {
+				pm.deck.ClearKey(i)
+			}
+			continue
+		}
+		pm.renderKey(i, &k)
 	}
 }
 
@@ -393,15 +587,8 @@ func parseDisplayOutput(output string) (*DisplayOutput, color.Color, color.Color
 }
 
 func (pm *PageManager) renderKeyOutput(idx int, d *config.DisplayCfg, output string, execErr error) {
-	pm.mu.RLock()
-	page := pm.pages[pm.active]
-	pm.mu.RUnlock()
-	if page == nil {
-		return
-	}
-
 	var kc *config.KeyConfig
-	for _, k := range page.Keys {
+	for _, k := range pm.activeKeys() {
 		if k.Index == idx {
 			kCopy := k
 			kc = &kCopy
@@ -499,13 +686,7 @@ func (pm *PageManager) renderKeyOutput(idx int, d *config.DisplayCfg, output str
 }
 
 func (pm *PageManager) RefreshDisplayKey(idx int) {
-	pm.mu.RLock()
-	page := pm.pages[pm.active]
-	pm.mu.RUnlock()
-	if page == nil {
-		return
-	}
-	for _, k := range page.Keys {
+	for _, k := range pm.activeKeys() {
 		if k.Index == idx && k.Display != nil {
 			timeout := 30 * time.Second
 			if k.Display.Timeout != "" {
@@ -892,9 +1073,9 @@ func loadImage(path string, targetSize int, faScale float64) (image.Image, error
 			displaySize = 1
 		}
 
-		// Resize to displaySize
+		// Resize to displaySize preserving aspect ratio (crop to fill)
 		if img.Bounds().Dx() != displaySize || img.Bounds().Dy() != displaySize {
-			g := gift.New(gift.Resize(displaySize, displaySize, gift.LanczosResampling))
+			g := gift.New(gift.ResizeToFill(displaySize, displaySize, gift.LanczosResampling, gift.CenterAnchor))
 			scaled := image.NewRGBA(image.Rect(0, 0, displaySize, displaySize))
 			g.Draw(scaled, img)
 			img = scaled

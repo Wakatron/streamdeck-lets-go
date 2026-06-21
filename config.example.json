@@ -41,6 +41,19 @@
           ]
         },
         {
+          "index": 2,
+          "icon": "fa:gamepad",
+          "label": "Games",
+          "font_size": 11,
+          "actions": [
+            {
+              "trigger": "tap",
+              "type": "page",
+              "page": "games"
+            }
+          ]
+        },
+        {
           "index": 7,
           "icon": "fa:chevron-right",
           "label": "Next",
@@ -58,6 +71,23 @@
           ]
         }
       ]
+    },
+    {
+      "name": "games",
+      "icon": "fa:gamepad",
+      "keys": [
+        {
+          "index": 0,
+          "icon": "fa:arrow-left",
+          "actions": [
+            { "trigger": "tap", "type": "page", "page": "main" }
+          ]
+        }
+      ],
+      "dynamic_keys": {
+        "script": "scripts/lutris-keys",
+        "interval": "120s"
+      }
     }
   ],
   "auto_switch": [],

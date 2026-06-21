@@ -52,6 +52,7 @@ document.addEventListener('alpine:init', () => {
       await this.loadConfig()
       await this.loadDecks()
       setInterval(() => this.pollDisplayOutputs(), 3000)
+      setInterval(() => this.loadEffectiveKeys(), 10000)
       this.connectSSE()
     },
 
@@ -101,6 +102,7 @@ document.addEventListener('alpine:init', () => {
         const res = await fetch('/api/config')
         this.config = await res.json()
         this.pages = this.config.pages
+        await this.loadEffectiveKeys()
         if (this.pages.length > 0) {
           const saved = localStorage.getItem('sd_active_page')
           if (saved && this.pages.find(p => p.name === saved)) {
@@ -113,6 +115,19 @@ document.addEventListener('alpine:init', () => {
       } catch (e) {
         this.showToast('Failed to load config', 'error')
       }
+    },
+
+    async loadEffectiveKeys() {
+      try {
+        const res = await fetch('/api/pages')
+        const pagesData = await res.json()
+        for (const pd of pagesData) {
+          const page = this.pages.find(p => p.name === pd.name)
+          if (page && pd.effective_keys && pd.effective_keys.length > 0) {
+            page.effective_keys = pd.effective_keys
+          }
+        }
+      } catch (_) {}
     },
 
     syncSettings() {
@@ -151,10 +166,13 @@ document.addEventListener('alpine:init', () => {
     get gridKeys() {
       const page = this.currentPage
       if (!page) return []
+      const sourceKeys = (page.effective_keys && page.effective_keys.length > 0)
+        ? page.effective_keys
+        : (page.keys || [])
       const keys = []
       const n = this.activeDeck.num_keys
       for (let i = 0; i < n; i++) {
-        const kc = page.keys.find(k => k.index === i)
+        const kc = sourceKeys.find(k => k.index === i)
         const dout = this.displayOutputs[i]
         keys.push({
           index: i,
@@ -166,6 +184,7 @@ document.addEventListener('alpine:init', () => {
           displayBg: dout?.background || '',
           displayText: dout?.text || '',
           previewUrl: this.keyPreviewUrl(kc ? kc : {}, dout),
+          isDynamic: !!(page.dynamic_keys && page.effective_keys?.find(k => k.index === i)),
         })
       }
       return keys
@@ -306,6 +325,9 @@ document.addEventListener('alpine:init', () => {
       const page = this.currentPage
       if (!page) return
       const kc = page.keys.find(k => k.index === idx)
+      if (!kc && page.dynamic_keys && page.effective_keys?.find(k => k.index === idx)) {
+        return
+      }
       this.editing = idx
       this.showAdvanced = false
 

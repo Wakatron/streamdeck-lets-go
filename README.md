@@ -127,6 +127,213 @@ Server down!
 
 If no color is specified, the key uses its configured background or the default black.
 
+### Dynamic Key Generators
+
+Generate an entire page of keys dynamically by running any executable (shell script, Python, Go binary, etc.). Useful for game launchers, music collections, Docker containers, monitoring dashboards — anything where the set of keys is not known at config time.
+
+```
+┌──────────────────────────────────────────────────┐
+│  Generator script (any language)                 │
+│  → queries Lutris DB, Steam API, etc.           │
+│  → outputs JSON array of KeyConfig to stdout     │
+│  → receives STREAMDECK_KEY_COUNT env var         │
+└──────────────┬───────────────────────────────────┘
+               │ stdout: [{"index":0,"icon":"...",...}]
+               ▼
+┌──────────────────────────────────────────────────┐
+│  streamdeck-lets-go daemon                       │
+│  → parses JSON                                   │
+│  → merges with static keys (static wins)         │
+│  → renders keys on the deck                      │
+│  → re-runs on interval (default 60s)             │
+└──────────────────────────────────────────────────┘
+```
+
+#### Config
+
+Add `dynamic_keys` to any page:
+
+```json
+{
+  "name": "Games",
+  "icon": "fa:gamepad",
+  "keys": [
+    {
+      "index": 0,
+      "icon": "fa:arrow-left",
+      "actions": [
+        { "trigger": "tap", "type": "page", "page": "main" }
+      ]
+    }
+  ],
+  "dynamic_keys": {
+    "command": "/home/user/bin/game-list",
+    "interval": "120s",
+    "timeout": "15s",
+    "max_keys": 14
+  }
+}
+```
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `command` | string | — | Shell command to execute (mutually exclusive with `script`) |
+| `script` | string | — | Path to an executable script; relative paths resolve against `~/.config/streamdeck-lets-go/` |
+| `interval` | string | `"60s"` | How often to re-run the generator (minimum 1s, maximum 24h) |
+| `timeout` | string | `"15s"` | Maximum execution time before the generator is killed |
+| `max_keys` | int | `deck.NumKeys()` | Maximum number of keys to accept (e.g. `13` to reserve 2 for navigation) |
+
+#### Generator contract
+
+The script **must** print a JSON array of key configs to stdout and exit with code 0. Each element supports the full `KeyConfig` schema:
+
+```json
+[
+  {
+    "index": 0,
+    "icon": "/home/user/.local/share/lutris/coverart/cyberpunk-2077.jpg",
+    "label": "Cyberpunk 2077",
+    "font_size": 12,
+    "icon_scale": 1.0,
+    "background": "#222222",
+    "actions": [
+      {
+        "trigger": "tap",
+        "type": "command",
+        "command": "lutris lutris:rungame/cyberpunk-2077",
+        "background": true
+      }
+    ]
+  }
+]
+```
+
+Every field from a static key is available:
+
+| Field | Type | Description |
+|---|---|---|
+| `index` | int | Key position on the deck (0-based) |
+| `icon` | string | Icon source: `fa:terminal`, `emoji:fire`, `@firefox`, `/absolute/path.png`, relative path |
+| `label` | string | Text shown below the icon |
+| `font_size` | number | Font size in points (default 18, recommended 11–14 for labels) |
+| `icon_scale` | number | Icon scale factor (0.0–1.0, default 0.55) |
+| `background` | string | Hex background color `"#222222"` |
+| `actions` | array | Same action schema as static keys — supports all triggers (`tap`, `long_press`, `double_tap`) and all action types (`command`, `builtin`, `script`, `page`, `keyboard`) |
+| `display` | object | Periodic display block (same as static key `display`) — command/script runs on interval and text is overlaid on the key |
+
+#### Merge behavior
+
+Static `keys` (defined directly on the page) and dynamic keys are **merged** at runtime:
+
+| Priority | Source |
+|---|---|
+| 1 (highest) | Static keys — their indices are reserved |
+| 2 | Dynamic keys — fill indices not occupied by static keys |
+
+This lets you keep navigation buttons fixed while the generator fills the rest of the deck:
+
+```
+Static:   [← back] [  ] [  ] [  ] [  ] [  ] [  ] [  ] [  ] [  ] [  ] [  ] [  ] [  ] [  ]
+            index 0   └────────────────────── dynamic (indices 1–14) ──────────────────────→
+```
+
+#### Environment variables
+
+The generator receives these environment variables:
+
+| Variable | Example | Description |
+|---|---|---|
+| `STREAMDECK_KEY_COUNT` | `15` | Maximum number of keys to output (derived from deck model or `max_keys` config) |
+| `STREAMDECK_CONFIG_DIR` | `/home/user/.config/streamdeck-lets-go` | Path to the config directory — useful for finding companion files |
+
+#### Error handling
+
+| Situation | Behavior |
+|---|---|
+| Script fails (non-zero exit, timeout) | Warning logged; previous keys preserved |
+| Script returns empty array `[]` | Only static keys rendered |
+| Script returns invalid JSON | Warning logged; previous keys preserved |
+| Script outputs debug to stderr | Logged at DEBUG level; stdout JSON parsed cleanly |
+| More keys than `max_keys` | Excess keys silently dropped |
+| Generator updates while page is active | Keys re-rendered in place (no flicker) |
+
+#### Examples
+
+**Python — Lutris game launcher**
+
+Place this at `~/.config/streamdeck-lets-go/scripts/lutris-keys`, make executable (`chmod +x`).
+
+```python
+#!/usr/bin/env python3
+import json, os, sqlite3, pathlib
+
+db = pathlib.Path.home() / '.local/share/lutris/pga.db'
+cover = pathlib.Path.home() / '.local/share/lutris/coverart'
+max_keys = int(os.environ.get('STREAMDECK_KEY_COUNT', 15))
+
+if not db.exists():
+    print('[]')
+    exit(0)
+
+conn = sqlite3.connect(db)
+games = conn.execute(
+    "SELECT slug, name FROM games WHERE installed = 1 ORDER BY name"
+).fetchall()
+conn.close()
+
+keys = []
+for idx, (slug, name) in enumerate(games):
+    if idx >= max_keys:
+        break
+    icon = next(cover.glob(f'{slug}.*'), None)
+    key = {
+        "index": idx,
+        "icon_scale": 1.0,
+        "actions": [{
+            "trigger": "tap",
+            "type": "command",
+            "command": f"lutris lutris:rungame/{slug}",
+            "background": True
+        }]
+    }
+    if icon:
+        key["icon"] = str(icon)
+    keys.append(key)
+
+print(json.dumps(keys))
+```
+
+Reference it in config:
+```json
+{
+  "name": "Games",
+  "dynamic_keys": {
+    "script": "scripts/lutris-keys",
+    "interval": "120s"
+  }
+}
+```
+
+**Shell — Simple test generator**
+
+```bash
+#!/bin/sh
+for i in $(seq 0 $((STREAMDECK_KEY_COUNT - 1))); do
+  [ "$i" -gt 0 ] && echo ","
+  printf '{"index":%d,"icon":"fa:hashtag","label":"Item %d"}' "$i" "$i"
+done
+```
+
+Run with any language you like — the only requirement is a valid JSON array on stdout.
+
+#### Tips
+
+- Use `max_keys` to reserve space for static navigation buttons
+- Enable `show_label_background: true` in the global config if labels on full-bleed icons are hard to read
+- Test your generator standalone before wiring it up: `STREAMDECK_KEY_COUNT=15 ./my-generator`
+- For large data sources, pass pagination params through the command string: `"command": "scripts/albums --page 0"`
+- Dynamic keys support `display` blocks — nest monitoring data inside generated keys
+
 ### Gesture timing
 
 Configured in the web UI (Settings → Gesture Timing) or in `config.json`:

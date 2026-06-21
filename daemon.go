@@ -184,7 +184,7 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 			if page == nil {
 				continue
 			}
-			for _, k := range page.Keys {
+			for _, k := range primaryPM.activeKeys() {
 				if k.Index == evt.Index {
 					if len(k.Actions) > 0 {
 						ge.HandleEvent(evt, k.Actions)

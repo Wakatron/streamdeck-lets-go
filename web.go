@@ -339,18 +339,27 @@ func (s *WebServer) handleGetPages(w http.ResponseWriter, r *http.Request) {
 	defer s.mu.RUnlock()
 
 	type pageInfo struct {
-		Name string     `json:"name"`
-		Keys []config.KeyConfig `json:"keys"`
-		Icon string     `json:"icon,omitempty"`
+		Name          string                `json:"name"`
+		Keys          []config.KeyConfig    `json:"keys"`
+		Icon          string                `json:"icon,omitempty"`
+		DynamicKeys   *config.DynamicKeyGen `json:"dynamic_keys,omitempty"`
+		Background    string                `json:"background,omitempty"`
+		EffectiveKeys []config.KeyConfig    `json:"effective_keys,omitempty"`
 	}
 
 	pages := make([]pageInfo, 0, len(s.cfg.Pages))
 	for _, p := range s.cfg.Pages {
-		pages = append(pages, pageInfo{
-			Name: p.Name,
-			Keys: p.Keys,
-			Icon: p.Icon,
-		})
+		pi := pageInfo{
+			Name:        p.Name,
+			Keys:        p.Keys,
+			Icon:        p.Icon,
+			DynamicKeys: p.DynamicKeys,
+			Background:  p.Background,
+		}
+		if p.DynamicKeys != nil && s.pm != nil {
+			pi.EffectiveKeys = s.pm.GetEffectiveKeys(p.Name)
+		}
+		pages = append(pages, pi)
 	}
 
 	w.Header().Set("Content-Type", "application/json")

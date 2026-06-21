@@ -94,8 +94,11 @@
           :style="{ borderColor: p.name === activePage ? 'var(--accent)' : '' }"
           @click="switchPage(p.name); subView = null">
           <span x-text="p.name"></span>
+          <span x-show="p.dynamic_keys"
+            title="Dynamic keys generator"
+            style="color:var(--accent);font-size:11px;margin-left:4px;">⚡</span>
           <span style="float:right;color:var(--text-muted);font-size:11px;"
-            x-text="p.keys.length + ' keys'"></span>
+            x-text="(p.effective_keys?.length || p.keys.length) + ' keys'"></span>
         </button>
       </template>
     </div>

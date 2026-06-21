@@ -43,8 +43,17 @@ type PageConfig struct {
 	Name        string          `json:"name"`
 	Icon        string          `json:"icon,omitempty"`
 	Keys        []KeyConfig     `json:"keys"`
+	DynamicKeys *DynamicKeyGen  `json:"dynamic_keys,omitempty"`
 	Background  string          `json:"background,omitempty"`
 	Screensaver *ScreensaverCfg `json:"screensaver,omitempty"`
+}
+
+type DynamicKeyGen struct {
+	Command  string `json:"command,omitempty"`
+	Script   string `json:"script,omitempty"`
+	Interval string `json:"interval,omitempty"`
+	Timeout  string `json:"timeout,omitempty"`
+	MaxKeys  int    `json:"max_keys,omitempty"`
 }
 
 type KeyConfig struct {
@@ -291,6 +300,35 @@ func (c *Config) Validate() error {
 				if k.Display.MaxLen > 4096 {
 					return fmt.Errorf("page %s key %d: max_len must be <= 4096", p.Name, k.Index)
 				}
+			}
+		}
+
+		if p.DynamicKeys != nil {
+			if p.DynamicKeys.Command == "" && p.DynamicKeys.Script == "" {
+				return fmt.Errorf("page %s: dynamic_keys requires command or script", p.Name)
+			}
+			if p.DynamicKeys.Command != "" && p.DynamicKeys.Script != "" {
+				return fmt.Errorf("page %s: dynamic_keys command and script are mutually exclusive", p.Name)
+			}
+			if p.DynamicKeys.Interval != "" {
+				interval, err := time.ParseDuration(p.DynamicKeys.Interval)
+				if err != nil {
+					return fmt.Errorf("page %s: invalid dynamic_keys interval %q: %w", p.Name, p.DynamicKeys.Interval, err)
+				}
+				if interval < time.Second {
+					return fmt.Errorf("page %s: dynamic_keys interval must be at least 1s", p.Name)
+				}
+				if interval > 24*time.Hour {
+					return fmt.Errorf("page %s: dynamic_keys interval must not exceed 24h", p.Name)
+				}
+			}
+			if p.DynamicKeys.Timeout != "" {
+				if _, err := time.ParseDuration(p.DynamicKeys.Timeout); err != nil {
+					return fmt.Errorf("page %s: invalid dynamic_keys timeout %q: %w", p.Name, p.DynamicKeys.Timeout, err)
+				}
+			}
+			if p.DynamicKeys.MaxKeys < 0 {
+				return fmt.Errorf("page %s: dynamic_keys max_keys must be >= 0", p.Name)
 			}
 		}
 	}

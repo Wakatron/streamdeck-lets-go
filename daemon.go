@@ -125,7 +125,7 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 		}
 	})
 
-	reconnectTicker := time.NewTicker(5 * time.Second)
+	reconnectTicker := time.NewTicker(2 * time.Second)
 	defer reconnectTicker.Stop()
 
 	ssTicker := time.NewTicker(5 * time.Second)
@@ -368,7 +368,7 @@ func reconnectDeck(ctx context.Context, cfg *config.Config, pm **PageManager) *D
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-time.After(3 * time.Second):
+		case <-time.After(1 * time.Second):
 		}
 	}
 }

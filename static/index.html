@@ -117,10 +117,20 @@
         </div>
         <div class="form-group">
           <label>Default Font</label>
-          <select x-model="settingsForm.font">
-            <option value="medium">Medium</option>
-            <option value="regular">Regular</option>
-          </select>
+          <div class="dropdown" x-data="dropdown({ get: () => settingsForm.font, set: v => settingsForm.font = v, options: fontOptions })" @click.outside="close()">
+            <button type="button" class="dropdown-trigger" :class="{ 'is-placeholder': isPlaceholder }" @click="toggle()" @keydown="onTriggerKey($event)">
+              <span class="dropdown-text" x-text="selectedLabel"></span>
+              <i class="fas fa-chevron-down dropdown-arrow"></i>
+            </button>
+            <div class="dropdown-menu" x-show="open" x-transition x-cloak>
+              <template x-for="(opt, oi) in optionList" :key="opt.value">
+                <button type="button" class="dropdown-option" :class="{ selected: isSelected(opt.value), active: activeIndex === oi }" @click="select(opt.value)" @mouseenter="activeIndex = oi">
+                  <span x-text="opt.label"></span>
+                  <i class="fas fa-check dropdown-check"></i>
+                </button>
+              </template>
+            </div>
+          </div>
         </div>
         <div class="checkbox-row">
           <input type="checkbox" id="show-label-bg" x-model="settingsForm.show_label_background">
@@ -185,12 +195,20 @@
               <div class="form-row">
                 <div class="form-group" style="margin-bottom:0;">
                   <label>Page</label>
-                  <select x-model="rule.page">
-                    <option value="">--</option>
-                    <template x-for="p in pages" :key="p.name">
-                      <option :value="p.name" x-text="p.name"></option>
-                    </template>
-                  </select>
+                  <div class="dropdown" x-data="dropdown({ get: () => rule.page, set: v => rule.page = v, options: () => pageOptions })" @click.outside="close()">
+                    <button type="button" class="dropdown-trigger" :class="{ 'is-placeholder': isPlaceholder }" @click="toggle()" @keydown="onTriggerKey($event)">
+                      <span class="dropdown-text" x-text="selectedLabel"></span>
+                      <i class="fas fa-chevron-down dropdown-arrow"></i>
+                    </button>
+                    <div class="dropdown-menu" x-show="open" x-transition x-cloak>
+                      <template x-for="(opt, oi) in optionList" :key="opt.value">
+                        <button type="button" class="dropdown-option" :class="{ selected: isSelected(opt.value), active: activeIndex === oi }" @click="select(opt.value)" @mouseenter="activeIndex = oi">
+                          <span x-text="opt.label"></span>
+                          <i class="fas fa-check dropdown-check"></i>
+                        </button>
+                      </template>
+                    </div>
+                  </div>
                 </div>
                 <div class="checkbox-row" style="margin-bottom:0;padding-top:16px;">
                   <input type="checkbox" x-model="rule.stay">
@@ -301,14 +319,20 @@
         <template x-for="t in ['tap','long_press','double_tap']" :key="t">
           <div x-show="editForm.activeTrigger === t">
             <div class="form-group">
-              <select x-model="editForm.actions[t].type">
-                <option value="none">None</option>
-                <option value="command">Command</option>
-                <option value="builtin">Builtin</option>
-                <option value="script">Script</option>
-                <option value="page">Switch page</option>
-                <option value="keyboard">Keyboard shortcut</option>
-              </select>
+              <div class="dropdown" x-data="dropdown({ get: () => editForm.actions[t].type, set: v => editForm.actions[t].type = v, options: actionTypeOptions })" @click.outside="close()">
+                <button type="button" class="dropdown-trigger" :class="{ 'is-placeholder': isPlaceholder }" @click="toggle()" @keydown="onTriggerKey($event)">
+                  <span class="dropdown-text" x-text="selectedLabel"></span>
+                  <i class="fas fa-chevron-down dropdown-arrow"></i>
+                </button>
+                <div class="dropdown-menu" x-show="open" x-transition x-cloak>
+                  <template x-for="(opt, oi) in optionList" :key="opt.value">
+                    <button type="button" class="dropdown-option" :class="{ selected: isSelected(opt.value), active: activeIndex === oi }" @click="select(opt.value)" @mouseenter="activeIndex = oi">
+                      <span x-text="opt.label"></span>
+                      <i class="fas fa-check dropdown-check"></i>
+                    </button>
+                  </template>
+                </div>
+              </div>
             </div>
 
             <template x-if="editForm.actions[t].type === 'command'">
@@ -325,18 +349,20 @@
 
             <template x-if="editForm.actions[t].type === 'builtin'">
               <div class="form-group">
-                <select x-model="editForm.actions[t].builtin">
-                  <option value="">-- select --</option>
-                  <option value="volume_up">Volume Up</option>
-                  <option value="volume_down">Volume Down</option>
-                  <option value="volume_mute">Volume Mute</option>
-                  <option value="brightness_up">Brightness Up</option>
-                  <option value="brightness_down">Brightness Down</option>
-                  <option value="media_play_pause">Play/Pause</option>
-                  <option value="media_next">Next Track</option>
-                  <option value="media_prev">Previous Track</option>
-                  <option value="media_stop">Stop</option>
-                </select>
+                <div class="dropdown" x-data="dropdown({ get: () => editForm.actions[t].builtin, set: v => editForm.actions[t].builtin = v, options: builtinOptions })" @click.outside="close()">
+                  <button type="button" class="dropdown-trigger" :class="{ 'is-placeholder': isPlaceholder }" @click="toggle()" @keydown="onTriggerKey($event)">
+                    <span class="dropdown-text" x-text="selectedLabel"></span>
+                    <i class="fas fa-chevron-down dropdown-arrow"></i>
+                  </button>
+                  <div class="dropdown-menu" x-show="open" x-transition x-cloak>
+                    <template x-for="(opt, oi) in optionList" :key="opt.value">
+                      <button type="button" class="dropdown-option" :class="{ selected: isSelected(opt.value), active: activeIndex === oi }" @click="select(opt.value)" @mouseenter="activeIndex = oi">
+                        <span x-text="opt.label"></span>
+                        <i class="fas fa-check dropdown-check"></i>
+                      </button>
+                    </template>
+                  </div>
+                </div>
               </div>
             </template>
 
@@ -347,12 +373,20 @@
             </template>
 
             <div class="form-group" x-show="editForm.actions[t].type === 'page'">
-                <select x-model="editForm.actions[t].page">
-                  <option value="">-- select --</option>
-                  <template x-for="p in pages" :key="p.name">
-                    <option :value="p.name" x-text="p.name"></option>
-                  </template>
-                </select>
+                <div class="dropdown" x-data="dropdown({ get: () => editForm.actions[t].page, set: v => editForm.actions[t].page = v, options: () => pageOptions })" @click.outside="close()">
+                  <button type="button" class="dropdown-trigger" :class="{ 'is-placeholder': isPlaceholder }" @click="toggle()" @keydown="onTriggerKey($event)">
+                    <span class="dropdown-text" x-text="selectedLabel"></span>
+                    <i class="fas fa-chevron-down dropdown-arrow"></i>
+                  </button>
+                  <div class="dropdown-menu" x-show="open" x-transition x-cloak>
+                    <template x-for="(opt, oi) in optionList" :key="opt.value">
+                      <button type="button" class="dropdown-option" :class="{ selected: isSelected(opt.value), active: activeIndex === oi }" @click="select(opt.value)" @mouseenter="activeIndex = oi">
+                        <span x-text="opt.label"></span>
+                        <i class="fas fa-check dropdown-check"></i>
+                      </button>
+                    </template>
+                  </div>
+                </div>
               </div>
 
             <template x-if="editForm.actions[t].type === 'keyboard'">
@@ -398,14 +432,20 @@
           <template x-for="phase in ['start','end']" :key="phase">
             <div x-show="editForm.holdPhase === phase">
               <div class="form-group">
-                <select x-model="editForm.actions.hold[phase].type">
-                  <option value="none">None</option>
-                  <option value="command">Command</option>
-                  <option value="builtin">Builtin</option>
-                  <option value="script">Script</option>
-                  <option value="page">Switch page</option>
-                  <option value="keyboard">Keyboard shortcut</option>
-                </select>
+                <div class="dropdown" x-data="dropdown({ get: () => editForm.actions.hold[phase].type, set: v => editForm.actions.hold[phase].type = v, options: actionTypeOptions })" @click.outside="close()">
+                  <button type="button" class="dropdown-trigger" :class="{ 'is-placeholder': isPlaceholder }" @click="toggle()" @keydown="onTriggerKey($event)">
+                    <span class="dropdown-text" x-text="selectedLabel"></span>
+                    <i class="fas fa-chevron-down dropdown-arrow"></i>
+                  </button>
+                  <div class="dropdown-menu" x-show="open" x-transition x-cloak>
+                    <template x-for="(opt, oi) in optionList" :key="opt.value">
+                      <button type="button" class="dropdown-option" :class="{ selected: isSelected(opt.value), active: activeIndex === oi }" @click="select(opt.value)" @mouseenter="activeIndex = oi">
+                        <span x-text="opt.label"></span>
+                        <i class="fas fa-check dropdown-check"></i>
+                      </button>
+                    </template>
+                  </div>
+                </div>
               </div>
 
               <template x-if="editForm.actions.hold[phase].type === 'command'">
@@ -422,18 +462,20 @@
 
               <template x-if="editForm.actions.hold[phase].type === 'builtin'">
                 <div class="form-group">
-                  <select x-model="editForm.actions.hold[phase].builtin">
-                    <option value="">-- select --</option>
-                    <option value="volume_up">Volume Up</option>
-                    <option value="volume_down">Volume Down</option>
-                    <option value="volume_mute">Volume Mute</option>
-                    <option value="brightness_up">Brightness Up</option>
-                    <option value="brightness_down">Brightness Down</option>
-                    <option value="media_play_pause">Play/Pause</option>
-                    <option value="media_next">Next Track</option>
-                    <option value="media_prev">Previous Track</option>
-                    <option value="media_stop">Stop</option>
-                  </select>
+                  <div class="dropdown" x-data="dropdown({ get: () => editForm.actions.hold[phase].builtin, set: v => editForm.actions.hold[phase].builtin = v, options: builtinOptions })" @click.outside="close()">
+                    <button type="button" class="dropdown-trigger" :class="{ 'is-placeholder': isPlaceholder }" @click="toggle()" @keydown="onTriggerKey($event)">
+                      <span class="dropdown-text" x-text="selectedLabel"></span>
+                      <i class="fas fa-chevron-down dropdown-arrow"></i>
+                    </button>
+                    <div class="dropdown-menu" x-show="open" x-transition x-cloak>
+                      <template x-for="(opt, oi) in optionList" :key="opt.value">
+                        <button type="button" class="dropdown-option" :class="{ selected: isSelected(opt.value), active: activeIndex === oi }" @click="select(opt.value)" @mouseenter="activeIndex = oi">
+                          <span x-text="opt.label"></span>
+                          <i class="fas fa-check dropdown-check"></i>
+                        </button>
+                      </template>
+                    </div>
+                  </div>
                 </div>
               </template>
 
@@ -444,12 +486,20 @@
               </template>
 
               <div class="form-group" x-show="editForm.actions.hold[phase].type === 'page'">
-                  <select x-model="editForm.actions.hold[phase].page">
-                    <option value="">-- select --</option>
-                    <template x-for="p in pages" :key="p.name">
-                      <option :value="p.name" x-text="p.name"></option>
-                    </template>
-                  </select>
+                  <div class="dropdown" x-data="dropdown({ get: () => editForm.actions.hold[phase].page, set: v => editForm.actions.hold[phase].page = v, options: () => pageOptions })" @click.outside="close()">
+                    <button type="button" class="dropdown-trigger" :class="{ 'is-placeholder': isPlaceholder }" @click="toggle()" @keydown="onTriggerKey($event)">
+                      <span class="dropdown-text" x-text="selectedLabel"></span>
+                      <i class="fas fa-chevron-down dropdown-arrow"></i>
+                    </button>
+                    <div class="dropdown-menu" x-show="open" x-transition x-cloak>
+                      <template x-for="(opt, oi) in optionList" :key="opt.value">
+                        <button type="button" class="dropdown-option" :class="{ selected: isSelected(opt.value), active: activeIndex === oi }" @click="select(opt.value)" @mouseenter="activeIndex = oi">
+                          <span x-text="opt.label"></span>
+                          <i class="fas fa-check dropdown-check"></i>
+                        </button>
+                      </template>
+                    </div>
+                  </div>
                 </div>
 
               <template x-if="editForm.actions.hold[phase].type === 'keyboard'">

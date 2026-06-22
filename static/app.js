@@ -47,6 +47,40 @@ document.addEventListener('alpine:init', () => {
       keyboard: 'Keyboard shortcut',
     },
 
+    // ── Dropdown option sets (declarative — add a new dropdown = add a list) ──
+    actionTypeOptions: [
+      { value: 'none', label: 'None' },
+      { value: 'command', label: 'Command' },
+      { value: 'builtin', label: 'Builtin' },
+      { value: 'script', label: 'Script' },
+      { value: 'page', label: 'Switch page' },
+      { value: 'keyboard', label: 'Keyboard shortcut' },
+    ],
+    builtinOptions: [
+      { value: '', label: '-- select --' },
+      { value: 'volume_up', label: 'Volume Up' },
+      { value: 'volume_down', label: 'Volume Down' },
+      { value: 'volume_mute', label: 'Volume Mute' },
+      { value: 'brightness_up', label: 'Brightness Up' },
+      { value: 'brightness_down', label: 'Brightness Down' },
+      { value: 'media_play_pause', label: 'Play/Pause' },
+      { value: 'media_next', label: 'Next Track' },
+      { value: 'media_prev', label: 'Previous Track' },
+      { value: 'media_stop', label: 'Stop' },
+    ],
+    fontOptions: [
+      { value: 'medium', label: 'Medium' },
+      { value: 'regular', label: 'Regular' },
+    ],
+
+    // Pages are dynamic — exposed as a getter so dropdowns stay reactive.
+    get pageOptions() {
+      return [
+        { value: '', label: '-- select --' },
+        ...this.pages.map(p => ({ value: p.name, label: p.name })),
+      ]
+    },
+
     // ── Init ──
     async init() {
       await this.loadConfig()
@@ -718,6 +752,76 @@ document.addEventListener('alpine:init', () => {
       const m = name.match(/config\.(.+)\.json/)
       if (!m) return name
       return m[1].replace('T', ' ')
+    },
+  }))
+
+  // ── Reusable dropdown component ──
+  // Usage:
+  //   x-data="dropdown({ get: () => model, set: v => model = v, options: [...] })"
+  // `options` may be an array or a function returning one (for reactive lists).
+  Alpine.data('dropdown', (config = {}) => ({
+    open: false,
+    activeIndex: -1,
+    _get: config.get || (() => ''),
+    _set: config.set || (() => {}),
+    _options: config.options || [],
+    placeholder: config.placeholder || '-- select --',
+
+    get optionList() {
+      return typeof this._options === 'function' ? this._options() : this._options
+    },
+    get selectedValue() {
+      return this._get()
+    },
+    get selectedLabel() {
+      const opt = this.optionList.find(o => o.value === this.selectedValue)
+      return opt ? opt.label : this.placeholder
+    },
+    get isPlaceholder() {
+      const v = this.selectedValue
+      const opt = this.optionList.find(o => o.value === v)
+      return v === '' || v == null || !opt
+    },
+    isSelected(value) {
+      return value === this.selectedValue
+    },
+    toggle() {
+      this.open = !this.open
+      if (this.open) {
+        this.activeIndex = this.optionList.findIndex(o => o.value === this.selectedValue)
+      }
+    },
+    close() {
+      this.open = false
+      this.activeIndex = -1
+    },
+    select(value) {
+      this._set(value)
+      this.close()
+    },
+    onTriggerKey(e) {
+      if (!this.open) {
+        if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown') {
+          e.preventDefault()
+          this.toggle()
+        }
+        return
+      }
+      const list = this.optionList
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        this.activeIndex = (this.activeIndex + 1) % list.length
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        this.activeIndex = (this.activeIndex - 1 + list.length) % list.length
+      } else if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault()
+        if (this.activeIndex >= 0) this.select(list[this.activeIndex].value)
+      } else if (e.key === 'Escape') {
+        e.preventDefault()
+        e.stopPropagation() // keep Escape from also closing the parent modal
+        this.close()
+      }
     },
   }))
 })

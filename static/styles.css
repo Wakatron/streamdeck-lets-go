@@ -1,23 +1,51 @@
 :root {
-  --bg: #0a0a10;
-  --surface: #141420;
-  --surface-hover: #1a1a2a;
-  --border: #252540;
-  --border-light: #333358;
-  --text: #e4e4f0;
-  --text-muted: #7a7a90;
-  --accent: #6366f1;
-  --accent-glow: rgba(99, 102, 241, 0.3);
-  --danger: #ef4444;
-  --success: #22c55e;
+  /* ── One Dark Pro palette ── */
+  /* Surfaces: layered dark greys built around One Dark's #282c34 base */
+  --bg: #282c34;
+  --surface: #2f343f;
+  --surface-hover: #3a3f4b;
+  --surface-sunken: #21252b;
+  --border: #3e4451;
+  --border-light: #4b5263;
+
+  /* Text */
+  --text: #abb2bf;
+  --text-muted: #5c6370;
+
+  /* Accent — purple (One Dark Pro signature) */
+  --accent: #c678dd;
+  --accent-hover: #d292e8;
+  --accent-active: #b561d0;
+  --accent-glow: rgba(198, 120, 221, 0.28);
+  --accent-soft: rgba(198, 120, 221, 0.12);
+  --on-accent: #21252b; /* dark text on the bright accent — WCAG AA (5.3:1) */
+
+  /* Semantic */
+  --danger: #e06c75;
+  --danger-soft: rgba(224, 108, 117, 0.12);
+  --success: #98c379;
+  --warning: #e5c07b;
+
+  /* Radii */
   --radius: 12px;
   --radius-sm: 8px;
   --radius-xs: 6px;
-  --shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+
+  /* Elevation */
+  --shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  --shadow-sm: 0 2px 10px rgba(0, 0, 0, 0.35);
+
+  /* Motion */
   --transition: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-spring: 220ms cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Typography */
+  --font-mono: 'SF Mono', 'Fira Code', 'JetBrains Mono', ui-monospace, monospace;
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
+
+[x-cloak] { display: none !important; }
 
 html, body {
   height: 100%;
@@ -112,6 +140,7 @@ main {
   background: var(--surface);
   border-radius: var(--radius);
   border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
   width: 100%;
   max-width: 525px;
   contain: layout style;
@@ -140,7 +169,7 @@ main {
 .deck-btn:hover { color: var(--text); border-color: var(--border-light); }
 .deck-btn.active {
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   border-color: var(--accent);
 }
 
@@ -148,7 +177,7 @@ main {
   aspect-ratio: 1;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  background: #0d0d18;
+  background: var(--surface-sunken);
   cursor: pointer;
   overflow: hidden;
   position: relative;
@@ -164,8 +193,9 @@ main {
 
 .key-btn:hover {
   border-color: var(--accent);
-  box-shadow: 0 0 12px var(--accent-glow);
-  transform: scale(1.03);
+  box-shadow: 0 0 0 1px var(--accent), 0 4px 16px var(--accent-glow);
+  transform: scale(1.04);
+  z-index: 1;
 }
 
 .key-btn:active { transform: scale(0.97); }
@@ -210,8 +240,9 @@ main {
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.6);
-  backdrop-filter: blur(4px);
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
   z-index: 100;
   display: flex;
   align-items: center;
@@ -257,7 +288,7 @@ main {
   overflow: hidden;
   border: 1px solid var(--border);
   position: relative;
-  background: #0d0d18;
+  background: var(--surface-sunken);
   cursor: pointer;
 }
 
@@ -303,37 +334,138 @@ main {
 .form-group input,
 .form-group select {
   width: 100%;
-  padding: 8px 10px;
-  background: var(--bg);
+  padding: 9px 11px;
+  background: var(--surface-sunken);
   border: 1px solid var(--border);
   border-radius: var(--radius-xs);
   color: var(--text);
   font-size: 13px;
   font-family: inherit;
   outline: none;
-  transition: border-color var(--transition);
+  transition: border-color var(--transition), box-shadow var(--transition), background var(--transition);
+}
+
+.form-group input:hover,
+.form-group select:hover {
+  border-color: var(--border-light);
 }
 
 .form-group input:focus,
 .form-group select:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent-glow);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 .form-group input::placeholder {
   color: var(--text-muted);
-  opacity: 0.5;
+  opacity: 0.7;
 }
 
 .form-group select {
   cursor: pointer;
   -webkit-appearance: none;
   appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 5l3 3 3-3' fill='none' stroke='%237a7a90' stroke-width='1.5'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 5l3 3 3-3' fill='none' stroke='%235c6370' stroke-width='1.5'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 10px center;
   padding-right: 28px;
 }
+
+/* ── Custom dropdown ──
+   Inline-expand pattern: the menu lives in normal document flow, so it
+   can never be clipped by an ancestor with overflow:auto (e.g. the modal).
+   Reusable across every <select> replacement. */
+.dropdown {
+  position: relative;
+  width: 100%;
+}
+
+.dropdown-trigger {
+  width: 100%;
+  padding: 9px 11px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  text-align: left;
+  transition: border-color var(--transition), box-shadow var(--transition), background var(--transition);
+}
+
+.dropdown-trigger:hover { border-color: var(--border-light); }
+
+.dropdown.open > .dropdown-trigger,
+.dropdown-trigger:focus-visible {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.dropdown-trigger .dropdown-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dropdown-trigger.is-placeholder .dropdown-text { color: var(--text-muted); }
+
+.dropdown-arrow {
+  flex-shrink: 0;
+  font-size: 10px;
+  color: var(--text-muted);
+  transition: transform var(--transition), color var(--transition);
+}
+.dropdown.open > .dropdown-trigger .dropdown-arrow {
+  transform: rotate(180deg);
+  color: var(--accent);
+}
+
+.dropdown-menu {
+  margin-top: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-xs);
+  box-shadow: var(--shadow-sm);
+  overflow-y: auto;
+  max-height: 260px;
+  padding: 4px;
+}
+
+.dropdown-option {
+  width: 100%;
+  padding: 8px 10px;
+  background: none;
+  border: none;
+  border-radius: var(--radius-xs);
+  color: var(--text-muted);
+  font-size: 13px;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  transition: background var(--transition), color var(--transition);
+}
+
+.dropdown-option:hover,
+.dropdown-option.active {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.dropdown-option.selected {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.dropdown-option .dropdown-check {
+  font-size: 10px;
+  opacity: 0;
+  flex-shrink: 0;
+}
+.dropdown-option.selected .dropdown-check { opacity: 1; }
 
 .form-row {
   display: flex;
@@ -401,17 +533,22 @@ main {
   transition: all var(--transition);
 }
 
+.btn:active { transform: translateY(1px); }
+
 .btn-primary {
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   border-color: var(--accent);
   flex: 1;
 }
 
 .btn-primary:hover {
-  background: #4f46e5;
-  box-shadow: 0 0 16px var(--accent-glow);
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+  box-shadow: 0 4px 16px var(--accent-glow);
 }
+
+.btn-primary:active { background: var(--accent-active); }
 
 .btn-outline {
   background: transparent;
@@ -655,7 +792,7 @@ main {
 .tab-btn:hover { color: var(--text); }
 .tab-btn.active {
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
 }
 
 /* ── Modifier buttons ── */
@@ -681,7 +818,7 @@ main {
 .mod-btn:hover { color: var(--text); border-color: var(--border-light); }
 .mod-btn.active {
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   border-color: var(--accent);
 }
 
@@ -771,7 +908,7 @@ main {
 .action-tab:hover { color: var(--text); border-color: var(--border-light); }
 .action-tab.active {
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   border-color: var(--accent);
 }
 .action-tab.configured {
@@ -780,7 +917,7 @@ main {
 }
 .action-tab.active.configured {
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   border-color: var(--accent);
 }
 .tab-check { font-size: 8px; }
@@ -808,6 +945,6 @@ main {
 .hold-stab:hover { color: var(--text); border-color: var(--border-light); }
 .hold-stab.active {
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   border-color: var(--accent);
 }

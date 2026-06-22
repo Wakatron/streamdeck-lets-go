@@ -15,6 +15,7 @@ type RunOptions struct {
 	HTTPAddr    string
 	HTTPEnabled bool
 	NoDeck      bool
+	StartPage   string
 }
 
 func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
@@ -63,6 +64,16 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 	primaryPM := pageMgrs[0]
 	primaryDeck := decks[0]
 
+	startPage := opts.StartPage
+	if startPage == "" {
+		startPage = cfg.DefaultPage
+	}
+	if !pageExists(cfg.Pages, startPage) {
+		slog.Warn("start page not found in pages, falling back to default",
+			"requested", startPage, "default", cfg.DefaultPage)
+		startPage = cfg.DefaultPage
+	}
+
 	defer func() {
 		for _, d := range decks {
 			d.Close()
@@ -78,8 +89,8 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 	web.SetExtraPageManagers(pageMgrs[1:])
 
 	for _, pm := range pageMgrs {
-		if err := pm.ActivatePage(cfg.DefaultPage); err != nil {
-			slog.Warn("activate default page", "error", err)
+		if err := pm.ActivatePage(startPage); err != nil {
+			slog.Warn("activate start page", "error", err)
 		}
 		pm.startPeriodicKeys()
 	}
@@ -98,7 +109,7 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 		windowCh, _ = detector.Start(ctx)
 	}
 
-	asm := NewAutoSwitchManager(cfg.AutoSwitch, cfg.DefaultPage)
+	asm := NewAutoSwitchManager(cfg.AutoSwitch, startPage)
 
 	ssCtrl := NewScreensaver(&cfg.Screensaver)
 
@@ -149,7 +160,7 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 				asm.Pause()
 
 				primaryDeck.Close()
-				newDeck := reconnectDeck(ctx, cfg, &primaryPM)
+				newDeck := reconnectDeck(ctx, cfg, &primaryPM, startPage)
 				if newDeck == nil {
 					return ctx.Err()
 				}
@@ -162,7 +173,7 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 				web.SetPageManager(primaryPM)
 
 				newDeck.SetBrightness(deviceBrightness(cfg, newDeck.Serial()))
-				asm.NotifyManualPage(cfg.DefaultPage)
+				asm.NotifyManualPage(startPage)
 				asm.Resume()
 				continue
 			}
@@ -288,7 +299,7 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 				asm.Pause()
 
 				primaryDeck.Close()
-				newDeck := reconnectDeck(ctx, cfg, &primaryPM)
+				newDeck := reconnectDeck(ctx, cfg, &primaryPM, startPage)
 				if newDeck == nil {
 					return ctx.Err()
 				}
@@ -301,7 +312,7 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 				web.SetPageManager(primaryPM)
 
 				newDeck.SetBrightness(deviceBrightness(cfg, newDeck.Serial()))
-				asm.NotifyManualPage(cfg.DefaultPage)
+				asm.NotifyManualPage(startPage)
 				asm.Resume()
 			}
 
@@ -353,7 +364,7 @@ func deviceBrightness(cfg *config.Config, serial string) int {
 	return 75
 }
 
-func reconnectDeck(ctx context.Context, cfg *config.Config, pm **PageManager) *Deck {
+func reconnectDeck(ctx context.Context, cfg *config.Config, pm **PageManager, startPage string) *Deck {
 	for {
 		newDeck, err := OpenDeck("")
 		if err == nil {
@@ -361,7 +372,7 @@ func reconnectDeck(ctx context.Context, cfg *config.Config, pm **PageManager) *D
 			(*pm).defaultFont = cfg.Font
 			(*pm).showLabelBackground = cfg.ShowLabelBackground
 			(*pm).LoadPages(cfg.Pages)
-			(*pm).ActivatePage(cfg.DefaultPage)
+			(*pm).ActivatePage(startPage)
 			(*pm).startPeriodicKeys()
 			return newDeck
 		}
@@ -371,4 +382,14 @@ func reconnectDeck(ctx context.Context, cfg *config.Config, pm **PageManager) *D
 		case <-time.After(1 * time.Second):
 		}
 	}
+}
+
+// pageExists reports whether pages contains a page with the given name.
+func pageExists(pages []config.PageConfig, name string) bool {
+	for _, p := range pages {
+		if p.Name == name {
+			return true
+		}
+	}
+	return false
 }

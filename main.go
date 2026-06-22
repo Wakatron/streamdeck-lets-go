@@ -22,6 +22,7 @@ func main() {
 	fs := flag.NewFlagSet("streamdeck-lets-go", flag.ExitOnError)
 	configPath := fs.String("config", "", "path to config.json (default: ~/.config/streamdeck-lets-go/config.json)")
 	httpAddr := fs.String("addr", ":9090", "web UI listen address")
+	startPage := fs.String("page", "", "page to activate on startup (default: config's default_page)")
 	noDeck := fs.Bool("no-deck", false, "run without Stream Deck hardware (config editing only)")
 	verbose := fs.Bool("v", false, "verbose output")
 
@@ -71,6 +72,7 @@ func main() {
 		HTTPAddr:    *httpAddr,
 		HTTPEnabled: httpEnabled,
 		NoDeck:      *noDeck,
+		StartPage:   *startPage,
 	}); err != nil {
 		slog.Error("run", "error", err)
 		os.Exit(1)

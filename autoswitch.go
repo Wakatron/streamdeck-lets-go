@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"streamdeck-lets-go/internal/config"
@@ -357,6 +358,7 @@ type AutoSwitchManager struct {
 	lastManualPage string
 	autoPage       string
 	autoStay       bool
+	paused         atomic.Bool // disables auto-switch when device is disconnected
 }
 
 type compiledRule struct {
@@ -408,6 +410,25 @@ func (m *AutoSwitchManager) NotifyManualPage(name string) {
 	m.lastManualPage = name
 	m.autoPage = ""
 	slog.Debug("auto-switch: manual page set", "page", name)
+}
+
+// Pause disables auto-switch evaluation — use when the device is disconnected
+// to prevent unnecessary page switches on a closed deck.
+func (m *AutoSwitchManager) Pause() {
+	m.paused.Store(true)
+	slog.Debug("auto-switch: paused")
+}
+
+// Resume re-enables auto-switch evaluation after reconnect.
+// Stale window events should be drained from the channel before resuming.
+func (m *AutoSwitchManager) Resume() {
+	m.paused.Store(false)
+	slog.Debug("auto-switch: resumed")
+}
+
+// IsPaused returns true when auto-switch evaluation is paused.
+func (m *AutoSwitchManager) IsPaused() bool {
+	return m.paused.Load()
 }
 
 func (m *AutoSwitchManager) Evaluate(win Window, currentPage string) (page string, shouldSwitch bool) {

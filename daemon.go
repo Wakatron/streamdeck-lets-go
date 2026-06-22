@@ -143,15 +143,27 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 		case evt, ok := <-primaryDeck.Events():
 			if !ok {
 				slog.Warn("deck event channel closed, attempting reconnect...")
+
+				// Stop all periodic scripts to avoid wasting cycles on a closed device.
+				primaryPM.stopPeriodicKeys()
+				asm.Pause()
+
 				primaryDeck.Close()
-				newDeck := reconnectDeck(ctx, cfg, &primaryPM, asm)
+				newDeck := reconnectDeck(ctx, cfg, &primaryPM)
 				if newDeck == nil {
 					return ctx.Err()
 				}
+
+				// Update all references to the new device and page manager.
+				pageMgrs[0] = primaryPM
 				decks[0] = newDeck
 				primaryDeck = newDeck
 				web.SetDecks(decks)
+				web.SetPageManager(primaryPM)
+
 				newDeck.SetBrightness(deviceBrightness(cfg, newDeck.Serial()))
+				asm.NotifyManualPage(cfg.DefaultPage)
+				asm.Resume()
 				continue
 			}
 
@@ -194,6 +206,13 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 			}
 
 		case win := <-windowCh:
+			if asm.IsPaused() {
+				// Drain buffered window events accumulated while disconnected.
+				for len(windowCh) > 0 {
+					<-windowCh
+				}
+				continue
+			}
 			if page, ok := asm.Evaluate(win, primaryPM.ActivePageName()); ok {
 				for _, pm := range pageMgrs {
 					if err := pm.ActivatePage(page); err != nil {
@@ -263,15 +282,27 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOptions) error {
 		case <-reconnectTicker.C:
 			if err := primaryDeck.SetBrightness(primaryDeck.Brightness()); err != nil {
 				slog.Warn("deck connection lost, reconnecting...", "error", err)
+
+				// Stop all periodic scripts to avoid wasting cycles on a closed device.
+				primaryPM.stopPeriodicKeys()
+				asm.Pause()
+
 				primaryDeck.Close()
-				newDeck := reconnectDeck(ctx, cfg, &primaryPM, asm)
+				newDeck := reconnectDeck(ctx, cfg, &primaryPM)
 				if newDeck == nil {
 					return ctx.Err()
 				}
+
+				// Update all references to the new device and page manager.
+				pageMgrs[0] = primaryPM
 				decks[0] = newDeck
 				primaryDeck = newDeck
 				web.SetDecks(decks)
+				web.SetPageManager(primaryPM)
+
 				newDeck.SetBrightness(deviceBrightness(cfg, newDeck.Serial()))
+				asm.NotifyManualPage(cfg.DefaultPage)
+				asm.Resume()
 			}
 
 		case <-ssTicker.C:
@@ -322,7 +353,7 @@ func deviceBrightness(cfg *config.Config, serial string) int {
 	return 75
 }
 
-func reconnectDeck(ctx context.Context, cfg *config.Config, pm **PageManager, asm *AutoSwitchManager) *Deck {
+func reconnectDeck(ctx context.Context, cfg *config.Config, pm **PageManager) *Deck {
 	for {
 		newDeck, err := OpenDeck("")
 		if err == nil {
@@ -332,7 +363,6 @@ func reconnectDeck(ctx context.Context, cfg *config.Config, pm **PageManager, as
 			(*pm).LoadPages(cfg.Pages)
 			(*pm).ActivatePage(cfg.DefaultPage)
 			(*pm).startPeriodicKeys()
-			asm.NotifyManualPage(cfg.DefaultPage)
 			return newDeck
 		}
 		select {

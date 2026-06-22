@@ -26,12 +26,11 @@ func main() {
 	noDeck := fs.Bool("no-deck", false, "run without Stream Deck hardware (config editing only)")
 	verbose := fs.Bool("v", false, "verbose output")
 
-	if len(os.Args) < 2 {
+	if len(os.Args) < 2 || os.Args[1] == "--help" || os.Args[1] == "-help" || os.Args[1] == "-h" {
 		fmt.Fprintf(os.Stderr, "Usage: streamdeck-lets-go [flags] [command]\n\n")
 		fmt.Fprintf(os.Stderr, "Commands:\n")
-		fmt.Fprintf(os.Stderr, "  daemon  run the Stream Deck daemon with web UI (default)\n")
-		fmt.Fprintf(os.Stderr, "  serve   run web UI only (no deck hardware)\n")
-		fmt.Fprintf(os.Stderr, "  discover  list connected Stream Decks\n")
+		fmt.Fprintf(os.Stderr, "  daemon   run the Stream Deck daemon with web UI (default)\n")
+		fmt.Fprintf(os.Stderr, "  discover list connected Stream Decks\n")
 		fmt.Fprintf(os.Stderr, "\nFlags:\n")
 		fs.PrintDefaults()
 		os.Exit(0)
@@ -43,13 +42,14 @@ func main() {
 	switch cmd {
 	case "daemon":
 		fs.Parse(args)
-	case "serve":
-		fs.Parse(args)
-		*noDeck = true
 	case "discover":
 		discover()
 		return
 	default:
+		if cmd == "serve" {
+			fmt.Fprintf(os.Stderr, "streamdeck-lets-go: 'serve' removed; use 'daemon --no-deck' instead\n")
+			os.Exit(1)
+		}
 		fs.Parse(os.Args[1:])
 	}
 

@@ -123,7 +123,7 @@ func composeImageWithLabel(src image.Image, text string, keySize int, fontSize f
 }
 
 func renderTextImage(text string, keySize int, fontSize float64) image.Image {
-	rgba := blankImage(keySize, color.RGBA{0, 0, 0, 255}).(*image.RGBA)
+	rgba := blankImage(keySize, color.RGBA{0, 0, 0, 0}).(*image.RGBA)
 
 	if text != "" {
 		face, err := parseDisplayFace(fontSize)

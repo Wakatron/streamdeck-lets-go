@@ -313,7 +313,7 @@ func (pm *PageManager) renderKey(idx int, k *config.KeyConfig) {
 			}
 			slog.Warn("invalid background color", "value", k.Background, "error", err)
 		}
-		if err := pm.deck.WriteText(idx, k.Label, image.Black, fontName, fontSize); err != nil {
+		if err := pm.deck.WriteText(idx, k.Label, color.RGBA{0x21, 0x25, 0x2b, 0xff}, fontName, fontSize); err != nil {
 			slog.Warn("write text", "error", err)
 		}
 	} else if k.Background != "" {

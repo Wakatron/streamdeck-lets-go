@@ -1,12 +1,16 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	_ "image/gif"
@@ -30,6 +34,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Usage: streamdeck-lets-go [flags] [command]\n\n")
 		fmt.Fprintf(os.Stderr, "Commands:\n")
 		fmt.Fprintf(os.Stderr, "  daemon   run the Stream Deck daemon with web UI (default)\n")
+		fmt.Fprintf(os.Stderr, "  switch   switch running daemon to a page (e.g. 'switch games')\n")
 		fmt.Fprintf(os.Stderr, "  discover list connected Stream Decks\n")
 		fmt.Fprintf(os.Stderr, "\nFlags:\n")
 		fs.PrintDefaults()
@@ -42,6 +47,18 @@ func main() {
 	switch cmd {
 	case "daemon":
 		fs.Parse(args)
+	case "switch":
+		fs.Parse(args)
+		if fs.NArg() == 0 {
+			fmt.Fprintf(os.Stderr, "Usage: streamdeck-lets-go switch <page>\n")
+			os.Exit(1)
+		}
+		if err := switchToPage(*httpAddr, fs.Arg(0)); err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("switched to page %q\n", fs.Arg(0))
+		return
 	case "discover":
 		discover()
 		return
@@ -93,4 +110,26 @@ func discover() {
 	for _, d := range devices {
 		fmt.Printf("  Serial: %s  Model: %s  PID: 0x%04x\n", d.Serial, d.Model, d.PID)
 	}
+}
+
+// switchToPage tells the running daemon (at httpAddr) to activate the given page
+// by POSTing to its /api/activate-page endpoint.
+func switchToPage(httpAddr, page string) error {
+	host := httpAddr
+	if strings.HasPrefix(host, ":") {
+		host = "127.0.0.1" + host
+	}
+	url := "http://" + host + "/api/activate-page"
+
+	body, _ := json.Marshal(map[string]string{"page": page})
+	resp, err := http.Post(url, "application/json", bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("daemon not running? %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("switch failed (HTTP %d)", resp.StatusCode)
+	}
+	return nil
 }

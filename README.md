@@ -398,6 +398,16 @@ Dependencies:
 
 ---
 
+## Credits
+
+This project builds on the work of the following open-source libraries:
+
+- **[dh1tw/streamdeck](https://github.com/dh1tw/streamdeck)** (MIT) — Go protocol driver for Elgato Stream Deck devices
+- **[bearsh/hid](https://github.com/bearsh/hid)** (MIT) — Go USB HID bindings via CGO / libusb
+- **[disintegration/gift](https://github.com/disintegration/gift)** (MIT) — Go Image Filtering Toolkit
+
+---
+
 ## License
 
 MIT
